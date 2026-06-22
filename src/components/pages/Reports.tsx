@@ -1,13 +1,13 @@
 import { motion } from 'framer-motion';
 import { FileText, Download, TrendingUp, AlertTriangle, Plane, Brain } from 'lucide-react';
-import type { Token, Incident, Drone } from '../../types';
-import { TRAFFIC_NODES } from '../../data/constants';
+import type { Token, Incident, Drone, TrafficNode } from '../../types';
 import { formatDate, formatTime } from '../../utils';
 
 interface ReportsProps {
   tokens: Token[];
   incidents: Incident[];
   drones: Drone[];
+  nodes: TrafficNode[];
 }
 
 const REPORT_TYPES = [
@@ -17,14 +17,15 @@ const REPORT_TYPES = [
   { id: 'ai', label: 'AI Prediction Summary', icon: Brain, color: '#A855F7', desc: 'Model accuracy and forecast outcomes' },
 ];
 
-export default function Reports({ tokens, incidents, drones }: ReportsProps) {
+export default function Reports({ tokens, incidents, drones, nodes }: ReportsProps) {
   const now = new Date().toISOString();
 
   return (
     <div className="h-full overflow-y-auto p-4 space-y-4">
+      {/* Title */}
       <div>
         <h1 className="text-lg font-bold text-white">Reports</h1>
-        <p className="text-[11px] text-gray-500 font-mono">Generate operational reports for Smart City Authority review</p>
+        <p className="text-xs text-gray-500 font-sans mt-0.5">Generate operational reports for Smart City Authority review</p>
       </div>
 
       {/* Report cards */}
@@ -37,43 +38,43 @@ export default function Reports({ tokens, incidents, drones }: ReportsProps) {
               <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ background: `${report.color}20` }}>
                 <report.icon className="w-5 h-5" style={{ color: report.color }} />
               </div>
-              <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/[0.08] text-[10px] font-mono text-gray-400 hover:text-white hover:border-white/[0.2] transition-all">
-                <Download className="w-3 h-3" /> Export PDF
+              <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/[0.08] text-xs font-sans text-gray-400 hover:text-white hover:border-white/[0.2] transition-all">
+                <Download className="w-3.5 h-3.5" /> Export PDF
               </button>
             </div>
             <div className="text-sm font-bold text-white mb-1">{report.label}</div>
-            <div className="text-[11px] text-gray-500 mb-3">{report.desc}</div>
+            <div className="text-xs text-gray-500 mb-3">{report.desc}</div>
 
             {/* Preview content */}
             {report.id === 'traffic' && (
               <div className="space-y-1.5">
-                {TRAFFIC_NODES.slice(0, 3).map(n => (
-                  <div key={n.id} className="flex items-center justify-between text-[10px] font-mono bg-white/[0.03] rounded px-2 py-1.5">
-                    <span className="text-gray-400">{n.name}</span>
+                {nodes.slice(0, 3).map(n => (
+                  <div key={n.id} className="flex items-center justify-between text-xs font-mono bg-white/[0.03] rounded px-2.5 py-2">
+                    <span className="text-gray-400 font-sans">{n.name}</span>
                     <span className="text-orange-400">{n.density}% · {n.vehicleCount.toLocaleString()} veh</span>
                   </div>
                 ))}
-                <div className="text-[9px] text-gray-600 text-center pt-1">+ {TRAFFIC_NODES.length - 3} more nodes</div>
+                <div className="text-xs text-gray-500 text-center pt-1">+ {nodes.length - 3} more nodes</div>
               </div>
             )}
             {report.id === 'incident' && (
               <div className="space-y-1.5">
                 {(incidents.length > 0 ? incidents : tokens.filter(t => t.type.includes('Accident') || t.type.includes('Congestion'))).slice(0, 3).map((item: any) => (
-                  <div key={item.id} className="flex items-center justify-between text-[10px] font-mono bg-white/[0.03] rounded px-2 py-1.5">
-                    <span className="text-gray-400">{item.type}</span>
-                    <span className="text-red-400 capitalize">{item.priority}</span>
+                  <div key={item.id} className="flex items-center justify-between text-xs font-mono bg-white/[0.03] rounded px-2.5 py-2">
+                    <span className="text-gray-400 font-sans">{item.type}</span>
+                    <span className="text-red-400 capitalize font-sans font-semibold">{item.priority}</span>
                   </div>
                 ))}
                 {incidents.length === 0 && tokens.length === 0 && (
-                  <div className="text-[10px] text-gray-600 text-center py-2">No incidents to report</div>
+                  <div className="text-xs text-gray-500 text-center py-2">No incidents to report</div>
                 )}
               </div>
             )}
             {report.id === 'drone' && (
               <div className="space-y-1.5">
                 {drones.map(d => (
-                  <div key={d.id} className="flex items-center justify-between text-[10px] font-mono bg-white/[0.03] rounded px-2 py-1.5">
-                    <span className="text-gray-400">{d.name}</span>
+                  <div key={d.id} className="flex items-center justify-between text-xs font-mono bg-white/[0.03] rounded px-2.5 py-2">
+                    <span className="text-gray-400 font-sans">{d.name}</span>
                     <span className="text-blue-400">{d.battery.toFixed(0)}% · {d.altitude}m</span>
                   </div>
                 ))}
@@ -86,8 +87,8 @@ export default function Reports({ tokens, incidents, drones }: ReportsProps) {
                   { k: 'Inference Time', v: '0.18s' },
                   { k: 'Model Status', v: 'Online' },
                 ].map(({ k, v }) => (
-                  <div key={k} className="flex items-center justify-between text-[10px] font-mono bg-white/[0.03] rounded px-2 py-1.5">
-                    <span className="text-gray-400">{k}</span>
+                  <div key={k} className="flex items-center justify-between text-xs font-mono bg-white/[0.03] rounded px-2.5 py-2">
+                    <span className="text-gray-400 font-sans">{k}</span>
                     <span className="text-purple-400">{v}</span>
                   </div>
                 ))}
@@ -104,8 +105,8 @@ export default function Reports({ tokens, incidents, drones }: ReportsProps) {
             <FileText className="w-4 h-4 text-orange-400" />
             <span className="text-sm font-semibold text-white">Master Intelligence Ledger</span>
           </div>
-          <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-orange-500/30 text-[10px] font-mono text-orange-400 hover:bg-orange-500/10 transition-all">
-            <Download className="w-3 h-3" /> Export Full Report
+          <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-orange-500/30 text-xs font-sans text-orange-400 hover:bg-orange-500/10 transition-all">
+            <Download className="w-3.5 h-3.5" /> Export Full Report
           </button>
         </div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
@@ -117,11 +118,11 @@ export default function Reports({ tokens, incidents, drones }: ReportsProps) {
           ].map(({ label, value, color }) => (
             <div key={label} className="bg-white/[0.03] rounded-lg p-3 text-center border border-white/[0.05]">
               <div className="text-xl font-bold font-mono" style={{ color }}>{value}</div>
-              <div className="text-[9px] text-gray-500 font-mono uppercase tracking-wider mt-1">{label}</div>
+              <div className="text-xs text-gray-500 font-sans uppercase tracking-wide mt-1">{label}</div>
             </div>
           ))}
         </div>
-        <div className="text-[10px] text-gray-600 font-mono text-center">
+        <div className="text-xs text-gray-500 font-sans text-center">
           Report generated on {formatDate(now)} at {formatTime(now)} IST · NIT DEM Command Center
         </div>
       </div>

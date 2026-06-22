@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { AlertTriangle, Plus, X, CheckCircle, Clock, Hash, MapPin, Crosshair } from 'lucide-react';
-import type { Incident, UserRole } from '../../types';
+import { AlertTriangle, Plus, X, CheckCircle, Clock, Hash, MapPin, Crosshair, List, Sparkles } from 'lucide-react';
+import type { Incident, UserRole, TrafficNode } from '../../types';
 import { formatRelative, priorityBadgeClass } from '../../utils';
 import LocationPicker from '../map/LocationPicker';
 
@@ -10,7 +10,22 @@ interface IncidentCenterProps {
   onLogIncident: (data: Omit<Incident, 'id' | 'timestamp' | 'tokenId' | 'status'>) => void;
   currentRole: UserRole;
   onUpdateIncidentStatus: (id: string, status: Incident['status']) => void;
+  enableGcsIncidents: boolean;
+  setEnableGcsIncidents: (val: boolean) => void;
+  nodes: TrafficNode[];
 }
+
+const junctionMap: Record<string, string> = {
+  'Mavoor Road Junction': 'mavoor',
+  'Bus Stand Junction': 'bus_stand',
+  'Arayidathupalam Junction': 'arayidathupalam',
+  'Mananchira Junction': 'mananchira',
+  'Stadium Junction': 'stadium',
+  'Poonthanam Junction': 'poonthanam',
+  'Palayam Junction': 'palayam',
+  'Midtown Junction': 'midtown',
+  'East Bypass Junction': 'east_bypass',
+};
 
 const INCIDENT_TYPES = ['Road Accident', 'Road Block', 'Vehicle Breakdown', 'Congestion Alert', 'Flooding', 'Traffic Signal Failure', 'VIP Movement', 'Other'];
 const LOCATIONS = ['Stadium Junction', 'Mavoor Road', 'Palayam', 'KSRTC Bus Stand', 'Mini Bypass', 'Custom'];
@@ -22,7 +37,16 @@ interface SelectedLocation {
   affectedRoads: string[];
 }
 
-export default function IncidentCenter({ incidents, onLogIncident, currentRole, onUpdateIncidentStatus }: IncidentCenterProps) {
+export default function IncidentCenter({
+  incidents,
+  onLogIncident,
+  currentRole,
+  onUpdateIncidentStatus,
+  enableGcsIncidents,
+  setEnableGcsIncidents,
+  nodes
+}: IncidentCenterProps) {
+  const [viewMode, setViewMode] = useState<'feed' | 'rankings'>('feed');
   const [showModal, setShowModal] = useState(false);
   const [showPicker, setShowPicker] = useState(false);
   const [form, setForm] = useState({ type: INCIDENT_TYPES[0], location: LOCATIONS[0], priority: 'high' as const, description: '' });
@@ -58,117 +82,351 @@ export default function IncidentCenter({ incidents, onLogIncident, currentRole, 
 
   const allIncidents = incidents;
 
+  const getAiRecommendation = (type: string, priority: Incident['priority'], location: string) => {
+    if (priority === 'critical') {
+      return {
+        title: "Immediate Traffic Diversion Required",
+        desc: `Reroute all heavy vehicles away from ${location}. Deploy drone for real-time corridor monitoring and signal adjustments.`
+      };
+    }
+    
+    switch (type) {
+      case 'Road Accident':
+        return {
+          title: "Emergency Response & Detour",
+          desc: "Notify medical and towing response teams. Broadcast detour route via dynamic message signs (VMS) on adjacent links."
+        };
+      case 'Road Block':
+      case 'Lanes Blocked':
+        return {
+          title: "Dynamic Lane Management",
+          desc: "Reduce speed limit on approach. Restructure lane allocation and divert flow through parallel avenues."
+        };
+      case 'Congestion Alert':
+        return {
+          title: "Signal Phase Optimization",
+          desc: "Adjust signal timings at adjacent junctions. Extend green phase for highly congested lanes."
+        };
+      case 'Flooding':
+        return {
+          title: "Severe Weather Detour",
+          desc: "Avoid low-lying areas. Advise light vehicles to use high-elevation outer bypass options."
+        };
+      case 'Vehicle Breakdown':
+        return {
+          title: "Rapid Roadside Assistance",
+          desc: "Dispatch local towing unit. Position warning tokens 50 meters upstream to prevent rear-end collisions."
+        };
+      default:
+        return {
+          title: "Tactical Monitoring",
+          desc: "Maintain regular surveillance. Adjust local signal cycle offsets to absorb transient queues."
+        };
+    }
+  };
+
+  const rankedIncidents = useMemo(() => {
+    return allIncidents
+      .map(incident => {
+        const priorityScore = incident.priority === 'critical' ? 50 :
+                              incident.priority === 'high' ? 30 :
+                              incident.priority === 'medium' ? 15 : 5;
+        
+        let junctionDensity = 20;
+        if (incident.nearestJunction) {
+          const targetNode = nodes.find(n => 
+            n.name.toLowerCase() === incident.nearestJunction?.toLowerCase() ||
+            n.id.toLowerCase() === incident.nearestJunction?.toLowerCase() ||
+            (junctionMap[incident.nearestJunction || ''] && 
+             n.id.toLowerCase() === junctionMap[incident.nearestJunction || ''].toLowerCase())
+          );
+          if (targetNode) {
+            junctionDensity = targetNode.density;
+          }
+        }
+
+        const match = incident.description.match(/(\d+)\s+lanes?\s+blocked/i);
+        const lanesBlocked = match ? parseInt(match[1], 10) : (incident.type === 'Lanes Blocked' ? 1 : 0);
+        const lanesScore = lanesBlocked * 15;
+
+        const rawScore = priorityScore + junctionDensity + lanesScore;
+        const statusMultiplier = incident.status === 'active' ? 1.0 :
+                                 incident.status === 'pending' ? 0.9 : 0.05;
+
+        const disruptionIndex = Math.min(100, Math.round(rawScore * statusMultiplier));
+
+        return {
+          ...incident,
+          disruptionIndex,
+          lanesBlocked,
+          junctionDensity
+        };
+      })
+      .sort((a, b) => b.disruptionIndex - a.disruptionIndex);
+  }, [allIncidents, nodes]);
+
   return (
     <div className="h-full overflow-y-auto p-4 space-y-4 relative">
-      <div className="flex items-center justify-between">
+      {/* Header & Tabs */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/[0.08] pb-4">
         <div>
           <h1 className="text-lg font-bold text-white">Incident Center</h1>
-          <p className="text-[11px] text-gray-500 font-mono">{allIncidents.filter(i => i.status === 'active').length} active · {allIncidents.length} total</p>
+          <p className="text-xs text-gray-500 font-sans mt-0.5">
+            {allIncidents.filter(i => i.status === 'active').length} active · {allIncidents.length} total
+          </p>
+        </div>
+        
+        <div className="flex bg-[#0F1117] p-1 rounded-lg border border-white/[0.08] self-start sm:self-auto shrink-0">
+          <button
+            onClick={() => setViewMode('feed')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-sans font-semibold transition-all ${
+              viewMode === 'feed'
+                ? 'bg-white/[0.08] text-white'
+                : 'text-gray-400 hover:text-white'
+            }`}
+          >
+            <List className="w-3.5 h-3.5" />
+            Active Feed
+          </button>
+          <button
+            onClick={() => setViewMode('rankings')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-sans font-semibold transition-all ${
+              viewMode === 'rankings'
+                ? 'bg-white/[0.08] text-white'
+                : 'text-gray-400 hover:text-white'
+            }`}
+          >
+            <Sparkles className="w-3.5 h-3.5 text-yellow-400" />
+            AI Disruption Rankings
+          </button>
         </div>
       </div>
 
-      {/* Incident list */}
-      <div className="space-y-2">
-        {allIncidents.length === 0 ? (
-          <div className="text-center py-16">
-            <CheckCircle className="w-10 h-10 text-green-400 mx-auto mb-2" />
-            <p className="text-sm text-gray-500">No incidents logged</p>
+      {/* Feed View */}
+      {viewMode === 'feed' && (
+        <div className="space-y-4">
+          {/* GCS Simulated Incidents Toggle */}
+          <div className="flex items-center justify-between gap-3 bg-[#0F1117] border border-white/[0.06] rounded-xl p-4">
+            <div>
+              <h2 className="text-xs font-sans font-bold text-white uppercase tracking-wider">Simulate GCS Automated Incidents</h2>
+              <p className="text-[11px] text-gray-400 mt-0.5">Toggle live simulation events detected from traffic volume and blocked lane inputs.</p>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={enableGcsIncidents}
+                onChange={(e) => setEnableGcsIncidents(e.target.checked)}
+                className="sr-only peer"
+              />
+              <div className="w-7 h-4 bg-white/[0.08] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-gray-400 after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-orange-500 peer-checked:after:bg-white peer-checked:after:border-orange-500"></div>
+            </label>
           </div>
-        ) : allIncidents.map((incident, i) => (
-          <motion.div key={incident.id}
-            initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.05 }}
-            className={`bg-[#0F1117] border rounded-xl p-4 flex items-start gap-4 transition-all ${
-              incident.status === 'declined' ? 'opacity-40 border-gray-800' :
-              incident.status === 'active' ? 'border-red-500/30 shadow-[0_0_15px_rgba(239,68,68,0.05)]' :
-              incident.status === 'pending' ? 'border-yellow-500/20' : 'border-white/[0.06]'
-            }`}>
-            <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
-              incident.priority === 'critical' ? 'bg-red-500/20' : incident.priority === 'high' ? 'bg-orange-500/20' : 'bg-yellow-500/20'
-            }`}>
-              <AlertTriangle className={`w-4 h-4 ${
-                incident.priority === 'critical' ? 'text-red-400' : incident.priority === 'high' ? 'text-orange-400' : 'text-yellow-400'
-              }`} />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 flex-wrap mb-1">
-                <span className={`text-sm font-semibold text-white ${incident.status === 'declined' ? 'line-through' : ''}`}>{incident.type}</span>
-                <span className={`text-[9px] font-mono px-2 py-0.5 rounded border ${priorityBadgeClass(incident.priority)}`}>
-                  {incident.priority.toUpperCase()}
-                </span>
-                <span className={`text-[9px] font-mono px-2 py-0.5 rounded border ${
-                  incident.status === 'active' ? 'bg-red-500/10 text-red-400 border-red-500/20' :
-                  incident.status === 'resolved' ? 'bg-green-500/10 text-green-400 border-green-500/20' :
-                  incident.status === 'declined' ? 'bg-gray-500/10 text-gray-400 border-gray-500/20' :
-                  'bg-yellow-500/10 text-yellow-400 border-yellow-500/20'
-                }`}>
-                  {incident.status.toUpperCase()}
-                </span>
-              </div>
-              <p className={`text-xs text-gray-400 mb-2 ${incident.status === 'declined' ? 'line-through' : ''}`}>{incident.description}</p>
-              <div className="flex items-center gap-4 text-[10px] font-mono text-gray-500 flex-wrap">
-                <span>📍 {incident.location}</span>
-                {incident.lat && incident.lng && (
-                  <span className="text-cyan-400">{incident.lat.toFixed(4)}°N, {incident.lng.toFixed(4)}°E</span>
-                )}
-                {incident.nearestJunction && (
-                  <span className="text-orange-400">Near: {incident.nearestJunction}</span>
-                )}
-                <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{formatRelative(incident.timestamp)}</span>
-                <span className="flex items-center gap-1 text-orange-400"><Hash className="w-3 h-3" />{incident.tokenId}</span>
-              </div>
 
-              {incident.status === 'pending' && (
-                <div className="mt-3 flex items-center justify-between gap-4 border-t border-white/[0.04] pt-3 flex-wrap">
-                  <span className="text-[10px] font-mono text-yellow-400 flex items-center gap-1">
-                    ⚠️ Awaiting Supervisor Validation
-                  </span>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => {
-                        if (currentRole === 'supervisor') {
-                          onUpdateIncidentStatus(incident.id, 'active');
-                        } else {
-                          alertRoleWarning(incident.id);
-                        }
-                      }}
-                      className={`px-3 py-1 rounded text-[10px] font-mono uppercase font-bold transition-all ${
-                        currentRole === 'supervisor'
-                          ? 'bg-green-500 hover:bg-green-600 text-black shadow-[0_0_8px_rgba(34,197,94,0.3)]'
-                          : 'bg-white/[0.02] text-gray-500 border border-white/[0.04] cursor-not-allowed hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/20'
-                      }`}
-                    >
-                      Accept
-                    </button>
-                    <button
-                      onClick={() => {
-                        if (currentRole === 'supervisor') {
-                          onUpdateIncidentStatus(incident.id, 'declined');
-                        } else {
-                          alertRoleWarning(incident.id);
-                        }
-                      }}
-                      className={`px-3 py-1 rounded text-[10px] font-mono uppercase font-bold transition-all ${
-                        currentRole === 'supervisor'
-                          ? 'bg-red-500 hover:bg-red-600 text-white shadow-[0_0_8px_rgba(239,68,68,0.3)]'
-                          : 'bg-white/[0.02] text-gray-500 border border-white/[0.04] cursor-not-allowed hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/20'
-                      }`}
-                    >
-                      Decline
-                    </button>
+          {/* Incident List */}
+          <div className="space-y-2">
+            {allIncidents.length === 0 ? (
+              <div className="text-center py-16">
+                <CheckCircle className="w-10 h-10 text-green-400 mx-auto mb-2" />
+                <p className="text-sm text-gray-500">No incidents logged</p>
+              </div>
+            ) : (
+              allIncidents.map((incident, i) => (
+                <motion.div key={incident.id}
+                  initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.05 }}
+                  className={`bg-[#0F1117] border rounded-xl p-4 flex items-start gap-4 transition-all ${
+                    incident.status === 'declined' ? 'opacity-40 border-gray-800' :
+                    incident.status === 'active' ? 'border-red-500/30 shadow-[0_0_15px_rgba(239,68,68,0.05)]' :
+                    incident.status === 'pending' ? 'border-yellow-500/20' : 'border-white/[0.06]'
+                  }`}>
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                    incident.priority === 'critical' ? 'bg-red-500/20' : incident.priority === 'high' ? 'bg-orange-500/20' : 'bg-yellow-500/20'
+                  }`}>
+                    <AlertTriangle className={`w-4 h-4 ${
+                      incident.priority === 'critical' ? 'text-red-400' : incident.priority === 'high' ? 'text-orange-400' : 'text-yellow-400'
+                    }`} />
                   </div>
-                </div>
-              )}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap mb-1.5">
+                      <span className={`text-sm font-semibold text-white ${incident.status === 'declined' ? 'line-through' : ''}`}>{incident.type}</span>
+                      <span className={`text-xs font-mono px-2 py-0.5 rounded border ${priorityBadgeClass(incident.priority)}`}>
+                        {incident.priority.toUpperCase()}
+                      </span>
+                      <span className={`text-xs font-mono px-2 py-0.5 rounded border ${
+                        incident.status === 'active' ? 'bg-red-500/10 text-red-400 border-red-500/20' :
+                        incident.status === 'resolved' ? 'bg-green-500/10 text-green-400 border-green-500/20' :
+                        incident.status === 'declined' ? 'bg-gray-500/10 text-gray-400 border-gray-500/20' :
+                        'bg-yellow-500/10 text-yellow-400 border-yellow-500/20'
+                      }`}>
+                        {incident.status.toUpperCase()}
+                      </span>
+                    </div>
+                    <p className={`text-xs text-gray-400 mb-2 leading-relaxed ${incident.status === 'declined' ? 'line-through' : ''}`}>{incident.description}</p>
+                    <div className="flex items-center gap-4 text-xs font-mono text-gray-500 flex-wrap">
+                      <span>📍 {incident.location}</span>
+                      {incident.lat && incident.lng && (
+                        <span className="text-cyan-400">{incident.lat.toFixed(4)}°N, {incident.lng.toFixed(4)}°E</span>
+                      )}
+                      {incident.nearestJunction && (
+                        <span className="text-orange-400">Near: {incident.nearestJunction}</span>
+                      )}
+                      <span className="flex items-center gap-1"><Clock className="w-3.5 h-3.5" />{formatRelative(incident.timestamp)}</span>
+                      <span className="flex items-center gap-1 text-orange-400"><Hash className="w-3.5 h-3.5" />{incident.tokenId}</span>
+                    </div>
 
-              {roleWarningId === incident.id && (
-                <motion.div initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }}
-                  className="text-[9px] font-mono text-red-400 mt-2 bg-red-500/10 border border-red-500/20 rounded px-2.5 py-1 flex items-center gap-1.5">
-                  🛑 ACCESS DENIED: Requires Supervisor (L3) elevation to validate dispatch tokens.
+                    {incident.status === 'pending' && (
+                      <div className="mt-3 flex items-center justify-between gap-4 border-t border-white/[0.04] pt-3 flex-wrap">
+                        <span className="text-xs font-sans font-semibold text-yellow-400 flex items-center gap-1">
+                          ⚠️ Awaiting Supervisor Validation
+                        </span>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => {
+                              if (currentRole === 'supervisor') {
+                                onUpdateIncidentStatus(incident.id, 'active');
+                              } else {
+                                alertRoleWarning(incident.id);
+                              }
+                            }}
+                            className={`px-3 py-1 rounded text-xs font-sans uppercase font-bold transition-all ${
+                              currentRole === 'supervisor'
+                                ? 'bg-green-500 hover:bg-green-600 text-black shadow-[0_0_8px_rgba(34,197,94,0.3)]'
+                                : 'bg-white/[0.02] text-gray-500 border border-white/[0.04] cursor-not-allowed hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/20'
+                            }`}
+                          >
+                            Accept
+                          </button>
+                          <button
+                            onClick={() => {
+                              if (currentRole === 'supervisor') {
+                                onUpdateIncidentStatus(incident.id, 'declined');
+                              } else {
+                                alertRoleWarning(incident.id);
+                              }
+                            }}
+                            className={`px-3 py-1 rounded text-xs font-sans uppercase font-bold transition-all ${
+                              currentRole === 'supervisor'
+                                ? 'bg-red-500 hover:bg-red-600 text-white shadow-[0_0_8px_rgba(239,68,68,0.3)]'
+                                : 'bg-white/[0.02] text-gray-500 border border-white/[0.04] cursor-not-allowed hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/20'
+                            }`}
+                          >
+                            Decline
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {roleWarningId === incident.id && (
+                      <motion.div initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }}
+                        className="text-xs font-sans text-red-400 mt-2 bg-red-500/10 border border-red-500/20 rounded px-2.5 py-1 flex items-center gap-1.5">
+                        🛑 ACCESS DENIED: Requires Supervisor (L3) elevation to validate dispatch tokens.
+                      </motion.div>
+                    )}
+                  </div>
                 </motion.div>
-              )}
+              ))
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* AI Disruption Rankings View */}
+      {viewMode === 'rankings' && (
+        <div className="space-y-3">
+          {rankedIncidents.length === 0 ? (
+            <div className="text-center py-16">
+              <CheckCircle className="w-10 h-10 text-green-400 mx-auto mb-2" />
+              <p className="text-sm text-gray-500">No active incidents to analyze</p>
             </div>
-          </motion.div>
-        ))}
-      </div>
+          ) : (
+            rankedIncidents.map((incident, idx) => {
+              const badgeColors = idx === 0 ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30' : // Gold
+                                  idx === 1 ? 'bg-slate-300/20 text-slate-300 border-slate-300/30' : // Silver
+                                  idx === 2 ? 'bg-amber-700/20 text-amber-500 border-amber-700/30' : // Bronze
+                                  'bg-white/[0.04] text-gray-400 border-white/[0.08]';
+              
+              const progressColor = incident.disruptionIndex >= 75 ? 'bg-red-500' :
+                                    incident.disruptionIndex >= 45 ? 'bg-orange-500' :
+                                    incident.disruptionIndex >= 20 ? 'bg-yellow-500' :
+                                    'bg-green-500';
+
+              const recommendation = getAiRecommendation(incident.type, incident.priority, incident.location);
+
+              return (
+                <motion.div
+                  key={incident.id}
+                  initial={{ opacity: 0, y: 15 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: idx * 0.05 }}
+                  className={`bg-[#0F1117] border rounded-xl p-4 flex flex-col gap-3 transition-all relative ${
+                    incident.status === 'declined' ? 'opacity-40 border-gray-800' :
+                    incident.status === 'active' ? 'border-red-500/20 shadow-[0_0_15px_rgba(239,68,68,0.02)]' :
+                    incident.status === 'pending' ? 'border-yellow-500/10' : 'border-white/[0.04]'
+                  }`}
+                >
+                  {/* Top row: Rank, title, priority */}
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2.5">
+                      <div className={`w-7 h-7 rounded-lg border flex items-center justify-center font-mono font-bold text-sm ${badgeColors}`}>
+                        #{idx + 1}
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className={`text-sm font-semibold text-white ${incident.status === 'declined' ? 'line-through' : ''}`}>
+                            {incident.type}
+                          </span>
+                          <span className={`text-[10px] font-mono px-1.5 py-0.2 rounded border ${priorityBadgeClass(incident.priority)}`}>
+                            {incident.priority.toUpperCase()}
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-gray-500 font-mono mt-0.5">📍 {incident.location}</p>
+                      </div>
+                    </div>
+
+                    {/* Disruption score dial/number */}
+                    <div className="text-right shrink-0">
+                      <span className="text-[10px] font-sans font-semibold tracking-wider text-gray-400 uppercase">Disruption Index</span>
+                      <div className="text-lg font-mono font-black text-white">{incident.disruptionIndex}%</div>
+                    </div>
+                  </div>
+
+                  {/* Progress Bar Gauge */}
+                  <div className="space-y-1">
+                    <div className="w-full h-1.5 bg-white/[0.06] rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all duration-500 ${progressColor}`}
+                        style={{ width: `${incident.disruptionIndex}%` }}
+                      />
+                    </div>
+                    <div className="flex items-center justify-between text-[9px] font-mono text-gray-500">
+                      <span>Priority Weight: {incident.priority === 'critical' ? 50 : incident.priority === 'high' ? 30 : incident.priority === 'medium' ? 15 : 5}pts</span>
+                      <span>Junction density: {incident.junctionDensity}%</span>
+                      {incident.lanesBlocked > 0 && <span>Blocked lanes: +{incident.lanesBlocked * 15}pts</span>}
+                    </div>
+                  </div>
+
+                  {/* Description */}
+                  <p className={`text-xs text-gray-400 leading-relaxed ${incident.status === 'declined' ? 'line-through' : ''}`}>
+                    {incident.description}
+                  </p>
+
+                  {/* AI Recommendation Card */}
+                  {incident.status !== 'declined' && incident.status !== 'resolved' && (
+                    <div className="mt-1 bg-white/[0.02] border border-white/[0.04] rounded-lg p-3 space-y-1">
+                      <div className="flex items-center gap-1.5 text-yellow-500/90 text-xs font-semibold">
+                        <Sparkles className="w-3.5 h-3.5 shrink-0" />
+                        {recommendation.title}
+                      </div>
+                      <p className="text-[11px] text-gray-400 font-sans leading-relaxed">
+                        {recommendation.desc}
+                      </p>
+                    </div>
+                  )}
+                </motion.div>
+              );
+            })
+          )}
+        </div>
+      )}
 
       {/* Floating log button */}
       <motion.button
@@ -212,7 +470,7 @@ export default function IncidentCenter({ incidents, onLogIncident, currentRole, 
                     <div className="flex items-center justify-between mb-4">
                       <div>
                         <div className="text-base font-bold text-white">Log Incident</div>
-                        <div className="text-[10px] text-gray-500 font-mono">Creates an intelligence token</div>
+                        <div className="text-xs text-gray-500 font-sans mt-0.5">Creates an intelligence token</div>
                       </div>
                       <button type="button" onClick={() => setShowModal(false)} className="text-gray-500 hover:text-white">
                         <X className="w-4 h-4" />
@@ -225,7 +483,7 @@ export default function IncidentCenter({ incidents, onLogIncident, currentRole, 
                       { label: 'Priority', key: 'priority', options: ['low', 'medium', 'high', 'critical'] },
                     ].map(({ label, key, options }) => (
                       <div key={key}>
-                        <label className="block text-[9px] font-mono text-gray-500 tracking-widest mb-1.5 uppercase">{label}</label>
+                        <label className="block text-[11px] font-sans font-semibold tracking-wider text-gray-400 mb-1.5 uppercase">{label}</label>
                         <select
                           value={(form as any)[key]}
                           onChange={e => setForm(prev => ({ ...prev, [key]: e.target.value }))}
@@ -237,24 +495,24 @@ export default function IncidentCenter({ incidents, onLogIncident, currentRole, 
                     ))}
 
                     <div>
-                      <label className="block text-[9px] font-mono text-gray-500 tracking-widest mb-1.5 uppercase">Description</label>
+                      <label className="block text-[11px] font-sans font-semibold tracking-wider text-gray-400 mb-1.5 uppercase">Description</label>
                       <textarea
                         value={form.description}
                         onChange={e => setForm(prev => ({ ...prev, description: e.target.value }))}
                         placeholder="Describe the incident..."
                         rows={3}
-                        className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white font-mono focus:outline-none focus:border-orange-500/50 transition-all resize-none"
+                        className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white font-sans focus:outline-none focus:border-orange-500/50 transition-all resize-none"
                         required
                       />
                     </div>
 
                     {/* Smart location selection */}
                     <div>
-                      <label className="block text-[9px] font-mono text-gray-500 tracking-widest mb-1.5 uppercase">Precise Location (Optional)</label>
+                      <label className="block text-[11px] font-sans font-semibold tracking-wider text-gray-400 mb-1.5 uppercase">Precise Location (Optional)</label>
                       <button
                         type="button"
                         onClick={() => setShowPicker(true)}
-                        className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg border border-dashed border-orange-500/30 text-orange-400 text-xs font-mono hover:bg-orange-500/10 transition-all"
+                        className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg border border-dashed border-orange-500/30 text-orange-400 text-xs font-sans hover:bg-orange-500/10 transition-all"
                       >
                         <Crosshair className="w-3.5 h-3.5" /> Select Incident Location
                       </button>
@@ -262,16 +520,16 @@ export default function IncidentCenter({ incidents, onLogIncident, currentRole, 
                       {selectedLoc && (
                         <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
                           className="mt-2 bg-white/[0.04] rounded-lg p-3 border border-white/[0.06] space-y-1.5">
-                          <div className="flex items-center gap-2 text-[10px] font-mono text-white">
+                          <div className="flex items-center gap-2 text-xs font-mono text-white">
                             <MapPin className="w-3 h-3 text-orange-400" />
                             {selectedLoc.lat.toFixed(5)}°N, {selectedLoc.lng.toFixed(5)}°E
                           </div>
-                          <div className="text-[10px] font-mono text-gray-400">
+                          <div className="text-xs font-mono text-gray-400">
                             Nearest Junction: <span className="text-orange-400">{selectedLoc.nearestJunction}</span>
                           </div>
                           <div className="flex flex-wrap gap-1">
                             {selectedLoc.affectedRoads.map(r => (
-                              <span key={r} className="text-[9px] bg-orange-500/10 text-orange-300 border border-orange-500/20 rounded px-1.5 py-0.5">{r}</span>
+                              <span key={r} className="text-xs bg-orange-500/10 text-orange-300 border border-orange-500/20 rounded px-1.5 py-0.5">{r}</span>
                             ))}
                           </div>
                         </motion.div>

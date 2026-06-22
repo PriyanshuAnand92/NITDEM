@@ -63,6 +63,7 @@ export interface Token {
   generatedBy: string;
   lat?: number;
   lng?: number;
+  mapImage?: string;
 }
 
 export interface Notification {

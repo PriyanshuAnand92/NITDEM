@@ -18,6 +18,7 @@ import HistoricalIntelligence from './components/pages/HistoricalIntelligence';
 import AlertGenerator from './components/pages/AlertGenerator';
 import Reports from './components/pages/Reports';
 import DroneFeed from './components/pages/DroneFeed';
+import IncidentNotificationPanel from './components/layout/IncidentNotificationPanel';
 import { useAppStore } from './hooks/useAppStore';
 import type { Page } from './types';
 
@@ -50,10 +51,22 @@ export default function App() {
   const renderPage = () => {
     switch (store.currentPage) {
       case 'dashboard':
-        return <Dashboard drones={store.drones} incidents={store.incidents} />;
+        return (
+          <Dashboard
+            drones={store.drones}
+            incidents={store.incidents}
+            nodes={store.nodes}
+            telemetryLogs={store.telemetryLogs}
+            predictionLogs={store.predictionLogs}
+            playbackIndex={store.playbackIndex}
+            isAutoDispatch={store.isAutoDispatch}
+            onDispatchDrone={store.dispatchDrone}
+          />
+        );
       case 'map':
         return (
           <CommandMap
+            nodes={store.nodes}
             selectedNode={store.selectedNode}
             onNodeSelect={store.setSelectedNode}
             selectedLink={store.selectedLink}
@@ -68,10 +81,19 @@ export default function App() {
             currentRole={store.currentRole}
             onUpdateDroneRoute={store.updateDroneRoute}
             isDark={store.isDark}
+            linkStatuses={store.linkStatuses}
+            incidents={store.incidents}
           />
         );
       case 'analytics':
-        return <AIAnalytics />;
+        return (
+          <AIAnalytics
+            nodes={store.nodes}
+            telemetryLogs={store.telemetryLogs}
+            predictionLogs={store.predictionLogs}
+            playbackIndex={store.playbackIndex}
+          />
+        );
       case 'forecasting':
         return <TrafficForecasting />;
       case 'incidents':
@@ -81,18 +103,21 @@ export default function App() {
             onLogIncident={store.logIncident}
             currentRole={store.currentRole}
             onUpdateIncidentStatus={store.updateIncidentStatus}
+            enableGcsIncidents={store.enableGcsIncidents}
+            setEnableGcsIncidents={store.setEnableGcsIncidents}
+            nodes={store.nodes}
           />
         );
       case 'events':
         return <EventPlanningCenter events={store.events} onCreateEvent={store.createEvent} />;
       case 'drones':
-        return <DroneOperations drones={store.drones} />;
+        return <DroneOperations drones={store.drones} nodes={store.nodes} />;
       case 'history':
         return <HistoricalIntelligence tokens={store.tokens} />;
       case 'alerts':
         return <AlertGenerator onCreateToken={store.createToken} />;
       case 'reports':
-        return <Reports tokens={store.tokens} incidents={store.incidents} drones={store.drones} />;
+        return <Reports tokens={store.tokens} incidents={store.incidents} drones={store.drones} nodes={store.nodes} />;
       case 'drone_feed':
         return <DroneFeed drones={store.drones} selectedDroneId={store.selectedDroneId} onSelectDrone={store.setSelectedDroneId} />;
       default:
@@ -117,6 +142,19 @@ export default function App() {
           incidentCount={store.incidents.filter(i => i.status === 'active').length}
         />
       </div>
+
+      {/* Incident Notification Panel on Left */}
+      {store.isAuthenticated && (
+        <IncidentNotificationPanel
+          incidents={store.incidents}
+          drones={store.drones}
+          isAutoDispatch={store.isAutoDispatch}
+          setIsAutoDispatch={store.setIsAutoDispatch}
+          onDispatchDrone={store.dispatchDrone}
+          currentRole={store.currentRole}
+          isDark={store.isDark}
+        />
+      )}
 
       {/* Mobile drawer */}
       <MobileDrawer
@@ -173,10 +211,12 @@ export default function App() {
           {showIntelPanel && (
             <div className="hidden lg:block h-full">
               <IntelPanel
+                nodes={store.nodes}
                 selectedNode={store.selectedNode}
                 selectedLink={store.selectedLink}
                 drones={store.drones}
                 predictionWindow={store.predictionWindow}
+                linkStatuses={store.linkStatuses}
               />
             </div>
           )}

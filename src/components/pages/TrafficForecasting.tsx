@@ -65,7 +65,7 @@ export default function TrafficForecasting() {
     <div className="h-full overflow-y-auto p-4 space-y-4">
       <div>
         <h1 className="text-lg font-bold text-white">Traffic Forecasting</h1>
-        <p className="text-[11px] text-gray-500 font-mono">Spatio-Temporal Graph Neural Network Event Simulation</p>
+        <p className="text-xs text-gray-500 font-sans mt-0.5">Spatio-Temporal Graph Neural Network Event Simulation</p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -78,7 +78,7 @@ export default function TrafficForecasting() {
 
           {/* Event selector */}
           <div>
-            <label className="block text-[9px] font-mono text-gray-500 tracking-widest mb-2 uppercase">Select Event Type</label>
+            <label className="block text-xs font-sans font-semibold tracking-wider text-gray-400 mb-2 uppercase">Select Event Type</label>
             <div className="space-y-2">
               {EVENTS.map(event => (
                 <button
@@ -93,7 +93,7 @@ export default function TrafficForecasting() {
                   <span>{event.icon}</span>
                   <div>
                     <div className="text-xs font-medium">{event.label}</div>
-                    <div className="text-[10px] text-gray-500 font-mono">Est. {event.expectedAttendance.toLocaleString()} attendees</div>
+                    <div className="text-xs text-gray-500 font-sans">Est. {event.expectedAttendance.toLocaleString()} attendees</div>
                   </div>
                 </button>
               ))}
@@ -102,7 +102,7 @@ export default function TrafficForecasting() {
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-[9px] font-mono text-gray-500 tracking-widest mb-2 uppercase">Expected Attendance</label>
+              <label className="block text-xs font-sans font-semibold tracking-wider text-gray-400 mb-2 uppercase">Expected Attendance</label>
               <input
                 type="number"
                 value={attendance}
@@ -111,7 +111,7 @@ export default function TrafficForecasting() {
               />
             </div>
             <div>
-              <label className="block text-[9px] font-mono text-gray-500 tracking-widest mb-2 uppercase">Event Start Time</label>
+              <label className="block text-xs font-sans font-semibold tracking-wider text-gray-400 mb-2 uppercase">Event Start Time</label>
               <input
                 type="time"
                 value={eventTime}
@@ -142,14 +142,14 @@ export default function TrafficForecasting() {
                 className="h-full flex flex-col items-center justify-center text-center py-8">
                 <TrendingUp className="w-10 h-10 text-gray-700 mb-3" />
                 <p className="text-sm text-gray-500">Configure an event and run the prediction model</p>
-                <p className="text-[10px] text-gray-600 font-mono mt-1">ST-GNN · Real-Time Spatial Analysis</p>
+                <p className="text-xs text-gray-600 font-sans mt-1">ST-GNN · Real-Time Spatial Analysis</p>
               </motion.div>
             )}
 
             {status === 'loading' && (
               <motion.div key="loading" initial={{ opacity: 0 }} animate={{ opacity: 1 }}
                 className="space-y-3">
-                <div className="text-[10px] font-mono text-orange-400 tracking-wider mb-4">RUNNING SPATIO-TEMPORAL TRAFFIC PREDICTION...</div>
+                <div className="text-xs font-mono text-orange-400 tracking-wider mb-4">RUNNING SPATIO-TEMPORAL TRAFFIC PREDICTION...</div>
                 {LOADING_STEPS.map((step, i) => (
                   <motion.div key={i} initial={{ opacity: 0, x: -20 }}
                     animate={{ opacity: i < loadStep ? 1 : 0.3, x: 0 }}
@@ -162,7 +162,7 @@ export default function TrafficForecasting() {
                     ) : (
                       <div className="w-3.5 h-3.5 border border-white/[0.1] rounded-full shrink-0" />
                     )}
-                    <span className={`text-[10px] font-mono ${i < loadStep ? 'text-gray-300' : 'text-gray-600'}`}>{step}</span>
+                    <span className={`text-xs font-mono ${i < loadStep ? 'text-gray-300' : 'text-gray-600'}`}>{step}</span>
                   </motion.div>
                 ))}
               </motion.div>
@@ -176,11 +176,11 @@ export default function TrafficForecasting() {
                 </div>
 
                 <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-3">
-                  <div className="text-[9px] font-mono text-red-400 mb-1">PREDICTED BOTTLENECK</div>
+                  <div className="text-xs font-sans font-semibold text-red-400 mb-1">PREDICTED BOTTLENECK</div>
                   <div className="text-sm font-bold text-white">{prediction.bottleneck}</div>
                   <div className="flex items-center gap-3 mt-1">
-                    <span className="text-[10px] text-gray-400 font-mono">Confidence: <span className="text-orange-400">{prediction.confidence}%</span></span>
-                    <span className="text-[10px] text-gray-400 font-mono">Peak: {prediction.peakTime}</span>
+                    <span className="text-xs text-gray-400 font-mono">Confidence: <span className="text-orange-400">{prediction.confidence}%</span></span>
+                    <span className="text-xs text-gray-400 font-mono">Peak: {prediction.peakTime}</span>
                   </div>
                 </div>
 
@@ -191,20 +191,20 @@ export default function TrafficForecasting() {
                     { label: 'Est. Delay', value: prediction.expectedDelay, icon: AlertTriangle, color: '#EF4444' },
                   ].map(({ label, value, icon: Icon, color }) => (
                     <div key={label} className="bg-white/[0.04] rounded-lg p-2 text-center">
-                      <Icon className="w-3 h-3 mx-auto mb-1" style={{ color }} />
+                      <Icon className="w-3.5 h-3.5 mx-auto mb-1" style={{ color }} />
                       <div className="text-xs font-bold font-mono" style={{ color }}>{value}</div>
-                      <div className="text-[9px] text-gray-500">{label}</div>
+                      <div className="text-[11px] text-gray-500">{label}</div>
                     </div>
                   ))}
                 </div>
 
                 <div className="bg-white/[0.03] rounded-lg p-3 border border-white/[0.06]">
-                  <div className="text-[9px] font-mono text-gray-500 mb-1">AI RECOMMENDATION</div>
+                  <div className="text-xs font-sans font-semibold text-gray-400 mb-1">AI RECOMMENDATION</div>
                   <div className="text-xs text-white">{prediction.recommendation}</div>
                 </div>
 
                 <div className="bg-white/[0.03] rounded-lg p-3 border border-white/[0.06]">
-                  <div className="flex items-center gap-2 text-[9px] font-mono text-gray-500 mb-1">
+                  <div className="flex items-center gap-2 text-xs font-sans font-semibold text-gray-400 mb-1">
                     <MapPin className="w-3 h-3" /> ALTERNATIVE ROUTE
                   </div>
                   <div className="text-xs text-green-400 font-mono">{prediction.alternateRoute}</div>

@@ -41,30 +41,29 @@ export default function LocationPicker({ onClose, onConfirm, initialLat, initial
       maxZoom: 19,
     }).addTo(map);
 
-    const pinIcon = L.divIcon({
-      className: '',
-      html: `<div style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;transform:translate(-50%,-100%);">
-        <svg width="28" height="28" viewBox="0 0 24 24" fill="#F97316" stroke="#fff" stroke-width="1">
-          <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z"/>
-        </svg>
-      </div>`,
-      iconSize: [28, 28],
-      iconAnchor: [14, 28],
-    });
-
     if (position) {
-      markerRef.current = L.marker([position.lat, position.lng], { icon: pinIcon }).addTo(map);
+      const pinIcon = L.divIcon({
+        className: '',
+        html: `<div style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;transform:translate(-50%,-100%);">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="#F97316" stroke="#fff" stroke-width="1">
+            <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z"/>
+          </svg>
+        </div>`,
+        iconSize: [28, 28],
+        iconAnchor: [14, 28],
+      });
+      const newMarker = L.marker([position.lat, position.lng], { icon: pinIcon, draggable: true }).addTo(map);
+      newMarker.on('dragend', () => {
+        const latLng = newMarker.getLatLng();
+        setPosition({ lat: latLng.lat, lng: latLng.lng });
+      });
+      markerRef.current = newMarker;
     }
 
     map.on('click', (e: L.LeafletMouseEvent) => {
       if (drawModeRef.current === 'pin') {
         const { lat, lng } = e.latlng;
         setPosition({ lat, lng });
-        if (markerRef.current) {
-          markerRef.current.setLatLng([lat, lng]);
-        } else {
-          markerRef.current = L.marker([lat, lng], { icon: pinIcon }).addTo(map);
-        }
       } else {
         setPolygonPoints(prev => {
           const next: [number, number][] = [...prev, [e.latlng.lat, e.latlng.lng]];
@@ -88,6 +87,45 @@ export default function LocationPicker({ onClose, onConfirm, initialLat, initial
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Sync state coordinates to Leaflet marker & map position
+  useEffect(() => {
+    if (!leafletMap.current || !position || drawMode !== 'pin') return;
+
+    const pinIcon = L.divIcon({
+      className: '',
+      html: `<div style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;transform:translate(-50%,-100%);">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="#F97316" stroke="#fff" stroke-width="1">
+          <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z"/>
+        </svg>
+      </div>`,
+      iconSize: [28, 28],
+      iconAnchor: [14, 28],
+    });
+
+    if (markerRef.current) {
+      const currentLatLng = markerRef.current.getLatLng();
+      if (currentLatLng.lat !== position.lat || currentLatLng.lng !== position.lng) {
+        markerRef.current.setLatLng([position.lat, position.lng]);
+        leafletMap.current.panTo([position.lat, position.lng]);
+      }
+    } else {
+      const newMarker = L.marker([position.lat, position.lng], { icon: pinIcon, draggable: true }).addTo(leafletMap.current);
+      newMarker.on('dragend', () => {
+        const latLng = newMarker.getLatLng();
+        setPosition({ lat: latLng.lat, lng: latLng.lng });
+      });
+      markerRef.current = newMarker;
+    }
+  }, [position, drawMode]);
+
+  // Remove marker if switching to polygon drawing
+  useEffect(() => {
+    if (drawMode !== 'pin' && markerRef.current) {
+      markerRef.current.remove();
+      markerRef.current = null;
+    }
+  }, [drawMode]);
 
   // Keep a ref to drawMode for the click handler closure
   const drawModeRef = useRef(drawMode);
@@ -186,12 +224,30 @@ export default function LocationPicker({ onClose, onConfirm, initialLat, initial
               </div>
               <div className="grid grid-cols-2 gap-2 text-[10px] font-mono">
                 <div className="bg-white/[0.03] rounded p-2">
-                  <div className="text-gray-500">Latitude</div>
-                  <div className="text-cyan-400">{position.lat.toFixed(5)}°N</div>
+                  <div className="text-gray-500 mb-1">Latitude</div>
+                  <input
+                    type="number"
+                    step="0.00001"
+                    value={position.lat}
+                    onChange={e => {
+                      const lat = parseFloat(e.target.value);
+                      if (!isNaN(lat)) setPosition(prev => ({ ...prev!, lat }));
+                    }}
+                    className="w-full bg-transparent border-b border-white/[0.1] text-cyan-400 focus:outline-none focus:border-orange-500 font-mono text-[11px]"
+                  />
                 </div>
                 <div className="bg-white/[0.03] rounded p-2">
-                  <div className="text-gray-500">Longitude</div>
-                  <div className="text-cyan-400">{position.lng.toFixed(5)}°E</div>
+                  <div className="text-gray-500 mb-1">Longitude</div>
+                  <input
+                    type="number"
+                    step="0.00001"
+                    value={position.lng}
+                    onChange={e => {
+                      const lng = parseFloat(e.target.value);
+                      if (!isNaN(lng)) setPosition(prev => ({ ...prev!, lng }));
+                    }}
+                    className="w-full bg-transparent border-b border-white/[0.1] text-cyan-400 focus:outline-none focus:border-orange-500 font-mono text-[11px]"
+                  />
                 </div>
                 <div className="bg-white/[0.03] rounded p-2 col-span-2">
                   <div className="text-gray-500">Nearest Junction</div>

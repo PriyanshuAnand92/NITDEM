@@ -121,27 +121,27 @@ export default function EventPlanningCenter({ events, onCreateEvent }: EventPlan
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-lg font-bold text-white">Event Planning Center</h1>
-          <p className="text-[11px] text-gray-500 font-mono">{events.length} planned events · Schedule & coordinate operations</p>
+          <p className="text-xs text-gray-500 font-sans mt-0.5">{events.length} planned events · Schedule & coordinate operations</p>
         </div>
         <div className="flex items-center gap-2">
           <div className="flex gap-1 bg-[#0F1117] border border-white/[0.08] rounded-lg p-1">
             <button onClick={() => setViewMode('month')}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded text-[10px] font-mono uppercase transition-all ${
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs font-sans uppercase transition-all ${
                 viewMode === 'month' ? 'bg-orange-500/20 text-orange-400' : 'text-gray-500 hover:text-white'
               }`}>
-              <LayoutGrid className="w-3 h-3" /> Month
+              <LayoutGrid className="w-3.5 h-3.5" /> Month
             </button>
             <button onClick={() => setViewMode('day')}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded text-[10px] font-mono uppercase transition-all ${
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs font-sans uppercase transition-all ${
                 viewMode === 'day' ? 'bg-orange-500/20 text-orange-400' : 'text-gray-500 hover:text-white'
               }`}>
-              <List className="w-3 h-3" /> Day
+              <List className="w-3.5 h-3.5" /> Day
             </button>
             <button onClick={() => setViewMode('rankings')}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded text-[10px] font-mono uppercase transition-all ${
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs font-sans uppercase transition-all ${
                 viewMode === 'rankings' ? 'bg-orange-500/20 text-orange-400' : 'text-gray-500 hover:text-white'
               }`}>
-              <Sparkles className="w-3 h-3" /> Rankings
+              <Sparkles className="w-3.5 h-3.5" /> Rankings
             </button>
           </div>
         </div>
@@ -169,7 +169,7 @@ export default function EventPlanningCenter({ events, onCreateEvent }: EventPlan
             {/* Weekday header */}
             <div className="grid grid-cols-7 border-b border-white/[0.04]">
               {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => (
-                <div key={d} className="text-center py-2 text-[9px] font-mono text-gray-500 tracking-widest uppercase">{d}</div>
+                <div key={d} className="text-center py-2 text-xs font-sans font-semibold text-gray-400 tracking-wider uppercase">{d}</div>
               ))}
             </div>
             {/* Calendar grid */}
@@ -186,20 +186,20 @@ export default function EventPlanningCenter({ events, onCreateEvent }: EventPlan
                       !inMonth ? 'opacity-30' : ''
                     } ${i % 7 === 6 ? 'border-r-0' : ''}`}
                   >
-                    <div className={`text-[10px] font-mono mb-1 inline-flex items-center justify-center w-5 h-5 rounded-full ${
+                    <div className={`text-xs font-mono mb-1 inline-flex items-center justify-center w-5 h-5 rounded-full ${
                       isToday(day) ? 'bg-orange-500 text-white font-bold' : 'text-gray-400'
                     }`}>
                       {format(day, 'd')}
                     </div>
                     <div className="space-y-0.5">
                       {dayEvts.slice(0, 2).map(ev => (
-                        <div key={ev.id} className="text-[8px] font-mono px-1 py-0.5 rounded truncate"
+                        <div key={ev.id} className="text-[10px] font-mono px-1 py-0.5 rounded truncate"
                           style={{ background: `${EVENT_TYPE_COLORS[ev.type]}20`, color: EVENT_TYPE_COLORS[ev.type] }}>
                           {ev.name}
                         </div>
                       ))}
                       {dayEvts.length > 2 && (
-                        <div className="text-[8px] font-mono text-gray-500">+{dayEvts.length - 2} more</div>
+                        <div className="text-[10px] font-mono text-gray-500">+{dayEvts.length - 2} more</div>
                       )}
                     </div>
                   </motion.button>
@@ -220,23 +220,23 @@ export default function EventPlanningCenter({ events, onCreateEvent }: EventPlan
                 className="flex items-start gap-3 bg-white/[0.03] rounded-lg p-3 border border-white/[0.05]">
                 <div className="w-2 h-2 rounded-full mt-1.5 shrink-0" style={{ backgroundColor: EVENT_TYPE_COLORS[ev.type] }} />
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap mb-1">
+                  <div className="flex items-center gap-2 flex-wrap mb-1.5">
                     <span className="text-sm font-semibold text-white">{ev.name}</span>
-                    <span className="text-[9px] font-mono px-2 py-0.5 rounded" style={{ background: `${EVENT_TYPE_COLORS[ev.type]}20`, color: EVENT_TYPE_COLORS[ev.type] }}>
+                    <span className="text-xs font-mono px-2 py-0.5 rounded" style={{ background: `${EVENT_TYPE_COLORS[ev.type]}20`, color: EVENT_TYPE_COLORS[ev.type] }}>
                       {ev.type}
                     </span>
-                    <span className={`text-[9px] font-mono px-2 py-0.5 rounded border ${priorityBadgeClass(ev.priority)}`}>
+                    <span className={`text-xs font-mono px-2 py-0.5 rounded border ${priorityBadgeClass(ev.priority)}`}>
                       {ev.priority.toUpperCase()}
                     </span>
                   </div>
-                  <div className="flex items-center gap-4 text-[10px] font-mono text-gray-500 flex-wrap">
-                    <span className="flex items-center gap-1"><CalendarIcon className="w-3 h-3" />{format(parseISO(ev.date), 'dd MMM yyyy')}</span>
-                    <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{ev.startTime} – {ev.endTime}</span>
-                    <span className="flex items-center gap-1"><Users className="w-3 h-3" />{ev.expectedAttendance.toLocaleString()}</span>
-                    {ev.zoneName && <span className="flex items-center gap-1"><MapPin className="w-3 h-3" />{ev.zoneName}</span>}
-                    <span className="flex items-center gap-1 text-orange-400"><Hash className="w-3 h-3" />{ev.tokenId}</span>
+                  <div className="flex items-center gap-4 text-xs font-mono text-gray-500 flex-wrap">
+                    <span className="flex items-center gap-1"><CalendarIcon className="w-3.5 h-3.5" />{format(parseISO(ev.date), 'dd MMM yyyy')}</span>
+                    <span className="flex items-center gap-1"><Clock className="w-3.5 h-3.5" />{ev.startTime} – {ev.endTime}</span>
+                    <span className="flex items-center gap-1"><Users className="w-3.5 h-3.5" />{ev.expectedAttendance.toLocaleString()}</span>
+                    {ev.zoneName && <span className="flex items-center gap-1"><MapPin className="w-3.5 h-3.5" />{ev.zoneName}</span>}
+                    <span className="flex items-center gap-1 text-orange-400"><Hash className="w-3.5 h-3.5" />{ev.tokenId}</span>
                   </div>
-                  {ev.description && <p className="text-[11px] text-gray-400 mt-1">{ev.description}</p>}
+                  {ev.description && <p className="text-xs text-gray-400 mt-1 leading-relaxed">{ev.description}</p>}
                 </div>
               </motion.div>
             ))}
@@ -307,32 +307,32 @@ export default function EventPlanningCenter({ events, onCreateEvent }: EventPlan
                       <div className="space-y-1">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="text-sm font-semibold text-white">{ev.name}</span>
-                          <span className="text-[9px] font-mono px-2 py-0.5 rounded" style={{ background: `${EVENT_TYPE_COLORS[ev.type]}20`, color: EVENT_TYPE_COLORS[ev.type] }}>
+                          <span className="text-xs font-mono px-2 py-0.5 rounded" style={{ background: `${EVENT_TYPE_COLORS[ev.type]}20`, color: EVENT_TYPE_COLORS[ev.type] }}>
                             {ev.type}
                           </span>
-                          <span className={`text-[9px] font-mono px-2 py-0.5 rounded border ${priorityBadgeClass(ev.priority)}`}>
+                          <span className={`text-xs font-mono px-2 py-0.5 rounded border ${priorityBadgeClass(ev.priority)}`}>
                             {ev.priority.toUpperCase()}
                           </span>
                         </div>
-                        <div className="flex items-center gap-3 text-[10px] font-mono text-gray-500 flex-wrap">
-                          <span className="flex items-center gap-1"><CalendarIcon className="w-3 h-3" />{format(parseISO(ev.date), 'dd MMM yyyy')}</span>
-                          <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{ev.startTime} – {ev.endTime}</span>
-                          <span className="flex items-center gap-1"><Users className="w-3 h-3" />{ev.expectedAttendance.toLocaleString()}</span>
-                          {ev.zoneName && <span className="flex items-center gap-1"><MapPin className="w-3 h-3" />{ev.zoneName}</span>}
+                        <div className="flex items-center gap-3 text-xs font-mono text-gray-500 flex-wrap">
+                          <span className="flex items-center gap-1"><CalendarIcon className="w-3.5 h-3.5" />{format(parseISO(ev.date), 'dd MMM yyyy')}</span>
+                          <span className="flex items-center gap-1"><Clock className="w-3.5 h-3.5" />{ev.startTime} – {ev.endTime}</span>
+                          <span className="flex items-center gap-1"><Users className="w-3.5 h-3.5" />{ev.expectedAttendance.toLocaleString()}</span>
+                          {ev.zoneName && <span className="flex items-center gap-1"><MapPin className="w-3.5 h-3.5" />{ev.zoneName}</span>}
                         </div>
-                        <div className="text-[11px] font-mono text-gray-400 bg-white/[0.02] border border-white/[0.04] rounded p-2.5 mt-2 space-y-1">
+                        <div className="text-xs font-sans text-gray-400 bg-white/[0.02] border border-white/[0.04] rounded p-2.5 mt-2 space-y-1">
                           <div className={ev.odi > 50 ? 'text-orange-400 font-bold' : 'text-gray-300'}>{ev.warning}</div>
-                          {ev.suggestion && <div className="text-cyan-400 text-[10px]">💡 Strategy: {ev.suggestion}</div>}
+                          {ev.suggestion && <div className="text-cyan-400 text-xs">💡 Strategy: {ev.suggestion}</div>}
                         </div>
                       </div>
                     </div>
                     
                     {/* Disruption index gauge */}
                     <div className="flex flex-col items-end shrink-0 min-w-[120px]">
-                      <span className="text-[8px] font-mono text-gray-500 tracking-wider uppercase mb-1">DISRUPTION INDEX</span>
+                      <span className="text-xs font-sans text-gray-500 tracking-wider uppercase mb-1">DISRUPTION INDEX</span>
                       <div className="flex items-baseline gap-1">
                         <span className="text-xl font-bold text-white font-mono">{ev.odi}</span>
-                        <span className="text-[10px] text-gray-500 font-mono">/ 100+</span>
+                        <span className="text-xs text-gray-500 font-mono">/ 100+</span>
                       </div>
                       <div className="w-full bg-white/[0.04] h-1.5 rounded-full overflow-hidden mt-1.5">
                         <div className={`h-full ${
@@ -380,7 +380,7 @@ export default function EventPlanningCenter({ events, onCreateEvent }: EventPlan
                     <div className="flex items-center justify-between mb-2">
                       <div>
                         <div className="text-base font-bold text-white">New Event</div>
-                        <div className="text-[10px] text-gray-500 font-mono">{format(selectedDate, 'EEEE, dd MMMM yyyy')}</div>
+                        <div className="text-xs text-gray-500 font-sans mt-0.5">{format(selectedDate, 'EEEE, dd MMMM yyyy')}</div>
                       </div>
                       <button type="button" onClick={() => setShowForm(false)} className="text-gray-500 hover:text-white">
                         <X className="w-4 h-4" />
@@ -388,7 +388,7 @@ export default function EventPlanningCenter({ events, onCreateEvent }: EventPlan
                     </div>
 
                     <div>
-                      <label className="block text-[9px] font-mono text-gray-500 tracking-widest mb-1.5 uppercase">Event Name</label>
+                      <label className="block text-[11px] font-sans font-semibold tracking-wider text-gray-400 mb-1.5 uppercase">Event Name</label>
                       <input value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))}
                         placeholder="e.g. EMS Stadium Football Final"
                         required
@@ -396,11 +396,11 @@ export default function EventPlanningCenter({ events, onCreateEvent }: EventPlan
                     </div>
 
                     <div>
-                      <label className="block text-[9px] font-mono text-gray-500 tracking-widest mb-1.5 uppercase">Event Type</label>
+                      <label className="block text-[11px] font-sans font-semibold tracking-wider text-gray-400 mb-1.5 uppercase">Event Type</label>
                       <div className="grid grid-cols-2 gap-2">
                         {EVENT_TYPES.map(type => (
                           <button key={type} type="button" onClick={() => setForm(p => ({ ...p, type }))}
-                            className={`px-2 py-2 rounded-lg text-[10px] font-mono border transition-all text-left ${
+                            className={`px-2 py-2 rounded-lg text-xs font-sans border transition-all text-left ${
                               form.type === type ? 'text-white' : 'border-white/[0.06] text-gray-500 hover:border-white/[0.12]'
                             }`}
                             style={form.type === type ? { background: `${EVENT_TYPE_COLORS[type]}20`, borderColor: `${EVENT_TYPE_COLORS[type]}50` } : {}}>
@@ -412,12 +412,12 @@ export default function EventPlanningCenter({ events, onCreateEvent }: EventPlan
 
                     <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <label className="block text-[9px] font-mono text-gray-500 tracking-widest mb-1.5 uppercase">Start Time</label>
+                        <label className="block text-[11px] font-sans font-semibold tracking-wider text-gray-400 mb-1.5 uppercase">Start Time</label>
                         <input type="time" value={form.startTime} onChange={e => setForm(p => ({ ...p, startTime: e.target.value }))}
                           className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white font-mono focus:outline-none focus:border-orange-500/50 transition-all" />
                       </div>
                       <div>
-                        <label className="block text-[9px] font-mono text-gray-500 tracking-widest mb-1.5 uppercase">End Time</label>
+                        <label className="block text-[11px] font-sans font-semibold tracking-wider text-gray-400 mb-1.5 uppercase">End Time</label>
                         <input type="time" value={form.endTime} onChange={e => setForm(p => ({ ...p, endTime: e.target.value }))}
                           className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white font-mono focus:outline-none focus:border-orange-500/50 transition-all" />
                       </div>
@@ -425,12 +425,12 @@ export default function EventPlanningCenter({ events, onCreateEvent }: EventPlan
 
                     <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <label className="block text-[9px] font-mono text-gray-500 tracking-widest mb-1.5 uppercase">Expected Attendance</label>
+                        <label className="block text-[11px] font-sans font-semibold tracking-wider text-gray-400 mb-1.5 uppercase">Expected Attendance</label>
                         <input type="number" value={form.expectedAttendance} onChange={e => setForm(p => ({ ...p, expectedAttendance: e.target.value }))}
                           className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white font-mono focus:outline-none focus:border-orange-500/50 transition-all" />
                       </div>
                       <div>
-                        <label className="block text-[9px] font-mono text-gray-500 tracking-widest mb-1.5 uppercase">Priority</label>
+                        <label className="block text-[11px] font-sans font-semibold tracking-wider text-gray-400 mb-1.5 uppercase">Priority</label>
                         <select value={form.priority} onChange={e => setForm(p => ({ ...p, priority: e.target.value as any }))}
                           className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white font-mono focus:outline-none focus:border-orange-500/50 transition-all">
                           {['low', 'medium', 'high', 'critical'].map(p => <option key={p} value={p} className="bg-[#151820]">{p}</option>)}
@@ -439,19 +439,19 @@ export default function EventPlanningCenter({ events, onCreateEvent }: EventPlan
                     </div>
 
                     <div>
-                      <label className="block text-[9px] font-mono text-gray-500 tracking-widest mb-1.5 uppercase">Description</label>
+                      <label className="block text-[11px] font-sans font-semibold tracking-wider text-gray-400 mb-1.5 uppercase">Description</label>
                       <textarea value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))}
                         rows={2} placeholder="Additional details..."
-                        className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white font-mono focus:outline-none focus:border-orange-500/50 transition-all resize-none" />
+                        className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-2 text-sm text-white font-sans focus:outline-none focus:border-orange-500/50 transition-all resize-none" />
                     </div>
 
                     {/* Area selection */}
                     <div>
-                      <label className="block text-[9px] font-mono text-gray-500 tracking-widest mb-1.5 uppercase">Area Selection</label>
+                      <label className="block text-[11px] font-sans font-semibold tracking-wider text-gray-400 mb-1.5 uppercase">Area Selection</label>
                       <div className="flex gap-2 mb-2">
                         {(['zone', 'pin', 'polygon'] as const).map(mode => (
                           <button key={mode} type="button" onClick={() => setForm(p => ({ ...p, areaMode: mode }))}
-                            className={`px-3 py-1.5 rounded-lg text-[10px] font-mono uppercase transition-all ${
+                            className={`px-3 py-1.5 rounded-lg text-xs font-sans uppercase transition-all ${
                               form.areaMode === mode ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30' : 'border border-white/[0.08] text-gray-500'
                             }`}>
                             {mode === 'zone' ? 'Select Zone' : mode === 'pin' ? 'Drop Pin' : 'Draw Area'}
@@ -469,17 +469,17 @@ export default function EventPlanningCenter({ events, onCreateEvent }: EventPlan
                       {(form.areaMode === 'pin' || form.areaMode === 'polygon') && (
                         <>
                           <button type="button" onClick={() => setShowPicker(true)}
-                            className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg border border-dashed border-orange-500/30 text-orange-400 text-xs font-mono hover:bg-orange-500/10 transition-all">
+                            className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg border border-dashed border-orange-500/30 text-orange-400 text-xs font-sans hover:bg-orange-500/10 transition-all">
                             <Crosshair className="w-3.5 h-3.5" />
                             {form.areaMode === 'pin' ? 'Drop Pin on Map' : 'Draw Area on Map'}
                           </button>
                           {pickedLocation && form.areaMode === 'pin' && (
-                            <div className="mt-2 text-[10px] font-mono text-cyan-400 flex items-center gap-1">
+                            <div className="mt-2 text-xs font-mono text-cyan-400 flex items-center gap-1">
                               <MapPin className="w-3 h-3" /> {pickedLocation.lat.toFixed(5)}°N, {pickedLocation.lng.toFixed(5)}°E
                             </div>
                           )}
                           {pickedPolygon && form.areaMode === 'polygon' && (
-                            <div className="mt-2 text-[10px] font-mono text-cyan-400">
+                            <div className="mt-2 text-xs font-mono text-cyan-400">
                               Zone defined with {pickedPolygon.length} points
                             </div>
                           )}
