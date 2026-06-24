@@ -20,6 +20,7 @@ import AlertGenerator from './components/pages/AlertGenerator';
 import Reports from './components/pages/Reports';
 import DroneFeed from './components/pages/DroneFeed';
 import IncidentNotificationPanel from './components/layout/IncidentNotificationPanel';
+import TemporalControls from './components/layout/TemporalControls';
 import { useAppStore } from './hooks/useAppStore';
 import type { Page } from './types';
 
@@ -62,6 +63,16 @@ export default function App() {
             playbackIndex={store.playbackIndex}
             isAutoDispatch={store.isAutoDispatch}
             onDispatchDrone={store.dispatchDrone}
+            isWhatIfActive={store.isWhatIfActive}
+            setIsWhatIfActive={store.setIsWhatIfActive}
+            whatIfLanesBlocked={store.whatIfLanesBlocked}
+            setWhatIfLanesBlocked={store.setWhatIfLanesBlocked}
+            whatIfEventIntensity={store.whatIfEventIntensity}
+            setWhatIfEventIntensity={store.setWhatIfEventIntensity}
+            whatIfRetimingSeconds={store.whatIfRetimingSeconds}
+            setWhatIfRetimingSeconds={store.setWhatIfRetimingSeconds}
+            isRetimingApplied={store.isRetimingApplied}
+            setIsRetimingApplied={store.setIsRetimingApplied}
           />
         );
       case 'map':
@@ -111,6 +122,7 @@ export default function App() {
             setEnableGcsIncidents={store.setEnableGcsIncidents}
             nodes={store.nodes}
             onUpdateIncident={store.updateIncident}
+            onDeleteIncident={store.deleteIncident}
           />
         );
       case 'events':
@@ -197,7 +209,7 @@ export default function App() {
 
         {/* Body: page content + intel panel */}
         <div className="flex-1 flex overflow-hidden">
-          <main className="flex-1 overflow-hidden min-w-0">
+          <main className="flex-1 overflow-hidden min-w-0 relative">
             <AnimatePresence mode="wait">
               <motion.div
                 key={store.currentPage}
@@ -212,7 +224,7 @@ export default function App() {
             </AnimatePresence>
           </main>
 
-          {/* Right intelligence panel — desktop only, contextual pages */}
+           {/* Right intelligence panel — desktop only, contextual pages */}
           {showIntelPanel && (
             <div className="hidden lg:block h-full">
               <IntelPanel
@@ -227,6 +239,30 @@ export default function App() {
                   store.setSelectedNode(null);
                   store.setSelectedLink(null);
                 }}
+                selectedTime={store.selectedTime}
+                coordsLinkData={store.coordsLinkData}
+                gcsPredictions={store.gcsPredictions}
+                onSelectLink={store.setSelectedLink}
+                isWhatIfActive={store.isWhatIfActive}
+                setIsWhatIfActive={store.setIsWhatIfActive}
+                whatIfLanesBlocked={store.whatIfLanesBlocked}
+                setWhatIfLanesBlocked={store.setWhatIfLanesBlocked}
+                whatIfEventIntensity={store.whatIfEventIntensity}
+                setWhatIfEventIntensity={store.setWhatIfEventIntensity}
+                whatIfRetimingSeconds={store.whatIfRetimingSeconds}
+                setWhatIfRetimingSeconds={store.setWhatIfRetimingSeconds}
+                isRetimingApplied={store.isRetimingApplied}
+                setIsRetimingApplied={store.setIsRetimingApplied}
+                uniqueTimestamps={store.uniqueTimestamps}
+                onTimeChange={store.setSelectedTime}
+                playbackIndex={store.playbackIndex}
+                setPlaybackIndex={store.setPlaybackIndex}
+                isPlaybackPlaying={store.isPlaybackPlaying}
+                setIsPlaybackPlaying={store.setIsPlaybackPlaying}
+                playbackSpeed={store.playbackSpeed}
+                setPlaybackSpeed={store.setPlaybackSpeed}
+                selectedDate={store.selectedDate}
+                setSelectedDate={store.setSelectedDate}
               />
             </div>
           )}

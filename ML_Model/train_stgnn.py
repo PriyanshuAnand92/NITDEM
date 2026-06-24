@@ -32,9 +32,9 @@ from torch.utils.data import Dataset, DataLoader
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
-# ---- path so we can import model.py from deployment/ ----
+# ---- path so we can import model.py and recommendation.py ----
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.join(ROOT, "deployment"))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from model import STGNN
 from recommendation import (
@@ -43,8 +43,12 @@ from recommendation import (
     print_recommendations,
 )
 
-DEPLOY_DIR  = os.path.join(ROOT, "deployment")
+# Use current ML_Model directory for model files and scalers
+DEPLOY_DIR  = os.path.dirname(os.path.abspath(__file__))
+# Check if datasets/ folder exists, else fallback to root directory where link1.xlsx is located
 DATASET_DIR = os.path.join(ROOT, "datasets")
+if not os.path.exists(DATASET_DIR):
+    DATASET_DIR = ROOT
 
 # ============================================================
 # REPRODUCIBILITY
@@ -393,13 +397,29 @@ with torch.no_grad():
 preds = np.concatenate(preds)
 trues = np.concatenate(trues)
 
+# Helper to safely save and show plots without blocking headless runs
+def save_and_show_plot(filename):
+    plot_dir = os.path.join(DEPLOY_DIR, "plots")
+    os.makedirs(plot_dir, exist_ok=True)
+    filepath = os.path.join(plot_dir, filename)
+    plt.savefig(filepath)
+    print(f"Saved plot to {filepath}")
+    try:
+        import sys
+        if hasattr(sys, 'ps1') or os.environ.get("DISPLAY") or (os.name == "nt" and sys.stdout.isatty()):
+            plt.show()
+    except Exception as e:
+        pass
+    plt.close()
+
 # Temporal attention plot
 attn = model.temporal.last_attention.mean(dim=0).numpy()
 plt.figure()
 plt.bar(range(len(attn)), attn)
 plt.title("Temporal Attention Importance")
 plt.xlabel("Timestep"); plt.ylabel("Attention Weight")
-plt.grid(True); plt.tight_layout(); plt.show()
+plt.grid(True); plt.tight_layout()
+save_and_show_plot("temporal_attention.png")
 
 # ============================================================
 # LINK-WISE PREDICTIONS CSV
@@ -478,7 +498,8 @@ for true, pred, title, ylabel in [
     plt.plot(true[:200], label="Actual")
     plt.plot(pred[:200], label="Predicted")
     plt.title(title); plt.xlabel("Sample"); plt.ylabel(ylabel)
-    plt.legend(); plt.grid(True); plt.tight_layout(); plt.show()
+    plt.legend(); plt.grid(True); plt.tight_layout()
+    save_and_show_plot(f"{title.lower().replace(' ', '_')}.png")
 
 for true, pred, title, xlabel, ylabel in [
     (queue_true, queue_pred, "Queue Length Scatter", "Actual Queue",  "Predicted Queue"),
@@ -487,7 +508,8 @@ for true, pred, title, xlabel, ylabel in [
     plt.figure()
     plt.scatter(true, pred, alpha=0.5)
     plt.xlabel(xlabel); plt.ylabel(ylabel); plt.title(title)
-    plt.grid(True); plt.tight_layout(); plt.show()
+    plt.grid(True); plt.tight_layout()
+    save_and_show_plot(f"{title.lower().replace(' ', '_')}.png")
 
 # ============================================================
 # MANAGEMENT RECOMMENDATIONS
@@ -499,6 +521,12 @@ print_recommendations(management_df)
 
 results_df = compute_linkwise_management(results_df)
 results_df.to_csv(os.path.join(DATASET_DIR, "traffic_management_results.csv"), index=False)
+
+# Also write to public/ folder if it exists, so the web app gets updated immediately
+public_dir = os.path.join(ROOT, "public")
+if os.path.exists(public_dir):
+    results_df.to_csv(os.path.join(public_dir, "traffic_management_results.csv"), index=False)
+    print(f"Also saved to {os.path.join(public_dir, 'traffic_management_results.csv')}")
 
 print("\n" + "=" * 70)
 print("LINK-WISE TRAFFIC MANAGEMENT RECOMMENDATIONS")

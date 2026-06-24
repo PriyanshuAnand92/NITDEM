@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { AlertTriangle, Plus, X, CheckCircle, Clock, Hash, MapPin, Crosshair, List, Sparkles, Edit2, Save } from 'lucide-react';
+import { AlertTriangle, Plus, X, CheckCircle, Clock, Hash, MapPin, Crosshair, List, Sparkles, Edit2, Save, Trash2 } from 'lucide-react';
 import type { Incident, UserRole, TrafficNode } from '../../types';
 import { formatRelative, priorityBadgeClass } from '../../utils';
 import LocationPicker from '../map/LocationPicker';
@@ -15,6 +15,7 @@ interface IncidentCenterProps {
   setEnableGcsIncidents: (val: boolean) => void;
   nodes: TrafficNode[];
   onUpdateIncident: (id: string, updates: Partial<Incident>) => void;
+  onDeleteIncident: (id: string) => void;
 }
 
 const junctionMap: Record<string, string> = {
@@ -49,7 +50,8 @@ export default function IncidentCenter({
   enableGcsIncidents,
   setEnableGcsIncidents,
   nodes,
-  onUpdateIncident
+  onUpdateIncident,
+  onDeleteIncident
 }: IncidentCenterProps) {
   const [viewMode, setViewMode] = useState<'feed' | 'rankings'>('feed');
   const [showModal, setShowModal] = useState(false);
@@ -366,6 +368,31 @@ export default function IncidentCenter({
                       </div>
                     )}
 
+                    {incident.status === 'active' && (
+                      <div className="mt-3 flex items-center justify-between gap-4 border-t border-white/[0.04] pt-3 flex-wrap">
+                        <span className="text-xs font-sans font-semibold text-green-400 flex items-center gap-1">
+                          🟢 Incident Active & Monitored
+                        </span>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (currentRole === 'supervisor') {
+                              onUpdateIncidentStatus(incident.id, 'resolved');
+                            } else {
+                              alertRoleWarning(incident.id);
+                            }
+                          }}
+                          className={`px-3 py-1 rounded text-xs font-sans uppercase font-bold transition-all cursor-pointer ${
+                            currentRole === 'supervisor'
+                              ? 'bg-green-500 hover:bg-green-600 text-black shadow-[0_0_8px_rgba(34,197,94,0.3)]'
+                              : 'bg-white/[0.02] text-gray-500 border border-white/[0.04] cursor-not-allowed hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/20'
+                          }`}
+                        >
+                          Resolve
+                        </button>
+                      </div>
+                    )}
+
                     {roleWarningId === incident.id && (
                       <motion.div initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }}
                         className="text-xs font-sans text-red-400 mt-2 bg-red-500/10 border border-red-500/20 rounded px-2.5 py-1 flex items-center gap-1.5">
@@ -373,6 +400,19 @@ export default function IncidentCenter({
                       </motion.div>
                     )}
                   </div>
+                  
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (window.confirm("Are you sure you want to remove this incident token from the feed?")) {
+                        onDeleteIncident(incident.id);
+                      }
+                    }}
+                    className="p-2 rounded-lg bg-red-500/10 border border-red-500/20 hover:bg-red-500/20 text-red-400 hover:text-red-300 transition-all self-start shrink-0"
+                    title="Remove Incident"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
                 </motion.div>
 
               ))
@@ -645,9 +685,22 @@ export default function IncidentCenter({
                   </div>
                   <div className="flex items-center gap-2">
                     {!isEditingView && (
-                      <button onClick={() => setIsEditingView(true)} className="text-orange-400 hover:text-orange-300 text-[10px] font-mono flex items-center gap-1 border border-orange-500/30 rounded px-2 py-1">
-                        <Edit2 className="w-3 h-3" /> Edit
-                      </button>
+                      <>
+                        <button onClick={() => setIsEditingView(true)} className="text-orange-400 hover:text-orange-300 text-[10px] font-mono flex items-center gap-1 border border-orange-500/30 rounded px-2 py-1 transition-all">
+                          <Edit2 className="w-3 h-3" /> Edit
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (window.confirm("Are you sure you want to delete this incident token?")) {
+                              onDeleteIncident(viewingIncident.id);
+                              setViewingIncident(null);
+                            }
+                          }}
+                          className="text-red-400 hover:text-red-300 text-[10px] font-mono flex items-center gap-1 border border-red-500/30 rounded px-2 py-1 transition-all"
+                        >
+                          <Trash2 className="w-3 h-3" /> Delete
+                        </button>
+                      </>
                     )}
                     <button onClick={() => setViewingIncident(null)} className="text-gray-500 hover:text-white">
                       <X className="w-4 h-4" />
@@ -691,6 +744,40 @@ export default function IncidentCenter({
                         ))}
                       </div>
                     )}
+
+                    <div className="pt-3 border-t border-white/[0.04] flex gap-2">
+                      {viewingIncident.status !== 'resolved' && viewingIncident.status !== 'declined' && (
+                        <button
+                          onClick={() => {
+                            if (currentRole === 'supervisor') {
+                              onUpdateIncidentStatus(viewingIncident.id, 'resolved');
+                              setViewingIncident(prev => prev ? { ...prev, status: 'resolved' } : null);
+                            } else {
+                              alertRoleWarning(viewingIncident.id);
+                            }
+                          }}
+                          className={`flex-1 py-2 rounded-lg text-xs font-mono uppercase font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                            currentRole === 'supervisor'
+                              ? 'bg-green-500 hover:bg-green-600 text-black shadow-[0_0_8px_rgba(34,197,94,0.3)]'
+                              : 'bg-white/[0.02] text-gray-500 border border-white/[0.04] cursor-not-allowed'
+                          }`}
+                        >
+                          <CheckCircle className="w-3.5 h-3.5" /> Resolve Incident
+                        </button>
+                      )}
+                      
+                      <button
+                        onClick={() => {
+                          if (window.confirm("Are you sure you want to delete this incident token?")) {
+                            onDeleteIncident(viewingIncident.id);
+                            setViewingIncident(null);
+                          }
+                        }}
+                        className="flex-1 py-2 rounded-lg text-xs font-mono uppercase font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer bg-red-500/10 border border-red-500/20 hover:bg-red-500/20 text-red-400 hover:text-red-300"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" /> Delete Token
+                      </button>
+                    </div>
                   </div>
                 ) : (
                   <div className="space-y-3">

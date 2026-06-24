@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import type { Page, TrafficNode, Drone, Incident, Token, Notification, PlannedEvent, DroneAnomaly, SimulationResult, SimulationAction, PredictionWindow, UserRole } from '../types';
 import { TRAFFIC_NODES, INITIAL_DRONES, SAMPLE_TOKENS, DRONE_ANOMALIES, runSimulation } from '../data/constants';
-import { parseTelemetryCSV, parseDensityCSV, parseXLSXData, parsePredictionsCSV, parseLink1CSV, CSVTelemetry, CSVDensityFrame, GCSLinkData, GCSPredictionData } from '../utils/csvParser';
+import { parseTelemetryCSV, parseDensityCSV, parseXLSXData, parsePredictionsCSV, parseLink1CSV, parseCoordinatesCSV, CSVTelemetry, CSVDensityFrame, GCSLinkData, GCSPredictionData } from '../utils/csvParser';
 
 const junctionMap: Record<string, string> = {
   'Mavoor Road Junction': 'mavoor',
@@ -133,13 +133,32 @@ export function useAppStore() {
     queueLength?: number;
   }>>({});
 
+  // What-If Simulation Sandbox states
+  const [isWhatIfActive, setIsWhatIfActive] = useState<boolean>(false);
+  const [whatIfLanesBlocked, setWhatIfLanesBlocked] = useState<number>(0);
+  const [whatIfEventIntensity, setWhatIfEventIntensity] = useState<number>(0);
+  const [whatIfRetimingSeconds, setWhatIfRetimingSeconds] = useState<number>(18);
+  const [isRetimingApplied, setIsRetimingApplied] = useState<boolean>(false);
+
   // GCS Live Configuration
   const USE_LIVE_GCS = true; // Set to false to use local public folder CSVs
-  const GCS_INPUT_URL = 'https://storage.googleapis.com/input_parametrs';
+  const GCS_INPUT_URL = 'https://storage.googleapis.com/input_parameters';
   const GCS_OUTPUT_URL = 'https://storage.googleapis.com/output_measures';
 
   const [gcsLinkData, setGcsLinkData] = useState<GCSLinkData[]>([]);
+  const [coordsLinkData, setCoordsLinkData] = useState<GCSLinkData[]>([]);
   const [gcsPredictions, setGcsPredictions] = useState<GCSPredictionData[]>([]);
+
+  // Timeline seek states
+  const [selectedTime, setSelectedTime] = useState<string>('00:00:00');
+  const [selectedDate, setSelectedDate] = useState<string>(() => {
+    const d = new Date();
+    const offset = d.getTimezoneOffset();
+    const localDate = new Date(d.getTime() - (offset * 60 * 1000));
+    return localDate.toISOString().split('T')[0];
+  });
+  const [isPlaybackPlaying, setIsPlaybackPlaying] = useState(true);
+  const [playbackSpeed, setPlaybackSpeed] = useState<number>(1);
 
   // Unique ticks computed dynamically from the link data
   const gcsTicks = useMemo(() => {
@@ -149,7 +168,7 @@ export function useAppStore() {
       const key = `${item.scenarioCode}|${item.timeS}`;
       if (!seen.has(key)) {
         seen.add(key);
-        ticks.push({ scenarioCode: item.scenarioCode, timeS: item.timeS });
+        ticks.push({ scenarioCode: item.scenarioCode || '', timeS: item.timeS || '' });
       }
     }
     return ticks;
@@ -177,7 +196,6 @@ export function useAppStore() {
           })
           .catch(err => {
             console.error("Error loading GCS link1.xlsx, falling back to local link1.csv", err);
-            // Fallback to local CSV if GCS fails
             fetch(localCsvUrl)
               .then(r => r.text())
               .then(text => setGcsLinkData(parseLink1CSV(text)))
@@ -190,106 +208,241 @@ export function useAppStore() {
           .catch(err => console.error("Error loading local link1.csv", err));
       }
 
-      // Load Prediction Data
-      fetch(predictionsUrl)
+      // Load GCS Coordinates Dataset
+      const coordsGcsUrl = `${GCS_INPUT_URL}/Kerala_Traffic_Dataset_With_Coordinates.csv`;
+      const coordsLocalUrl = `/Kerala_Traffic_Dataset_With_Coordinates.csv`;
+
+      fetch(coordsGcsUrl)
         .then(r => {
           if (!r.ok) throw new Error(`Status ${r.status}`);
           return r.text();
         })
         .then(text => {
-          setGcsPredictions(parsePredictionsCSV(text));
+          setCoordsLinkData(parseCoordinatesCSV(text));
         })
-        .catch(err => console.error("Error loading predictions CSV", err));
+        .catch(err => {
+          console.error("Error loading GCS coordinates CSV, trying local fallback", err);
+          fetch(coordsLocalUrl)
+            .then(r => {
+              if (!r.ok) throw new Error(`Status ${r.status}`);
+              return r.text();
+            })
+            .then(text => setCoordsLinkData(parseCoordinatesCSV(text)))
+            .catch(err2 => console.error("Error loading local coordinates CSV", err2));
+        });
+
+      // Load Prediction Data
+      if (USE_LIVE_GCS) {
+        fetch(predictionsUrl)
+          .then(r => {
+            if (!r.ok) throw new Error(`Status ${r.status}`);
+            return r.text();
+          })
+          .then(text => {
+            setGcsPredictions(parsePredictionsCSV(text));
+          })
+          .catch(err => {
+            console.error("Error loading GCS predictions CSV, trying local fallback", err);
+            fetch('/traffic_management_results.csv')
+              .then(r => {
+                if (!r.ok) throw new Error(`Status ${r.status}`);
+                return r.text();
+              })
+              .then(text => setGcsPredictions(parsePredictionsCSV(text)))
+              .catch(err2 => console.error("Error loading local predictions CSV fallback", err2));
+          });
+      } else {
+        fetch('/traffic_management_results.csv')
+          .then(r => {
+            if (!r.ok) throw new Error(`Status ${r.status}`);
+            return r.text();
+          })
+          .then(text => setGcsPredictions(parsePredictionsCSV(text)))
+          .catch(err => console.error("Error loading local predictions CSV", err));
+      }
     };
 
     fetchGCSData();
     
-    // Set up polling interval: 5 seconds for live GCS updates
-    const pollInterval = setInterval(fetchGCSData, USE_LIVE_GCS ? 5000 : 300000);
+    // Set up polling interval: 10 seconds for live GCS updates
+    const pollInterval = setInterval(fetchGCSData, USE_LIVE_GCS ? 10000 : 300000);
     return () => clearInterval(pollInterval);
   }, [USE_LIVE_GCS]);
 
-  // Playback timer for GCS ticks
+  // Unique timestamps computed dynamically from the coordinates data
+  const uniqueTimestamps = useMemo(() => {
+    const times = new Set<string>();
+    for (const item of coordsLinkData) {
+      if (item.timestamp) times.add(item.timestamp);
+    }
+    return Array.from(times).sort();
+  }, [coordsLinkData]);
+
+  // Playback timer for GCS ticks (Coordinate dataset takes priority)
   useEffect(() => {
-    if (!isAuthenticated || gcsTicks.length === 0) return;
-    const interval = setInterval(() => {
-      setPlaybackIndex(prev => (prev + 1) % gcsTicks.length);
-    }, 3000); // 3 seconds per time step transition
-    return () => clearInterval(interval);
-  }, [isAuthenticated, gcsTicks.length]);
+    if (!isAuthenticated) return;
+    
+    const isCoordsActive = coordsLinkData.length > 0 && uniqueTimestamps.length > 0;
+    const ticksCount = isCoordsActive ? uniqueTimestamps.length : gcsTicks.length;
+    if (ticksCount === 0 || !isPlaybackPlaying) return;
+
+    if (isCoordsActive && playbackSpeed === 1) {
+      // Run as per system time: sync index with current system clock every second
+      const syncWithSystemTime = () => {
+        const now = new Date();
+        const targetSec = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
+        
+        let closestIdx = 0;
+        let minDiff = Infinity;
+        for (let i = 0; i < uniqueTimestamps.length; i++) {
+          const parts = uniqueTimestamps[i].split(':').map(Number);
+          const sec = (parts[0] || 0) * 3600 + (parts[1] || 0) * 60 + (parts[2] || 0);
+          const diff = Math.abs(sec - targetSec);
+          if (diff < minDiff) {
+            minDiff = diff;
+            closestIdx = i;
+          }
+        }
+        setPlaybackIndex(closestIdx);
+      };
+
+      // Sync immediately and set interval to keep updating every second
+      syncWithSystemTime();
+      const interval = setInterval(syncWithSystemTime, 1000);
+      return () => clearInterval(interval);
+    } else {
+      // Standard artificial fast-forward playback simulation
+      const interval = setInterval(() => {
+        setPlaybackIndex(prev => {
+          const next = prev + playbackSpeed;
+          return next >= ticksCount ? 0 : next;
+        });
+      }, 2000);
+      return () => clearInterval(interval);
+    }
+  }, [isAuthenticated, coordsLinkData, uniqueTimestamps, gcsTicks, isPlaybackPlaying, playbackSpeed]);
+
+  // Synchronize selectedTime with playbackIndex
+  useEffect(() => {
+    if (coordsLinkData.length > 0 && uniqueTimestamps.length > 0) {
+      const idx = playbackIndex % uniqueTimestamps.length;
+      setSelectedTime(uniqueTimestamps[idx]);
+    }
+  }, [playbackIndex, uniqueTimestamps, coordsLinkData]);
 
   // Populate telemetryLogs and predictionLogs for charts
   useEffect(() => {
-    if (gcsLinkData.length === 0 || gcsTicks.length === 0) return;
+    const isCoordsActive = coordsLinkData.length > 0 && uniqueTimestamps.length > 0;
     
-    const activeTick = gcsTicks[playbackIndex];
-    if (!activeTick) return;
-
-    // Filter GCS link data for the active scenario up to the current tick
-    const scenarioTicks = gcsTicks.filter(t => t.scenarioCode === activeTick.scenarioCode);
-    const currentScenarioIndex = scenarioTicks.findIndex(t => t.timeS === activeTick.timeS);
-    
-    const logs: CSVTelemetry[] = [];
-    const predLogs: CSVTelemetry[] = [];
-
-    for (let i = 0; i <= currentScenarioIndex; i++) {
-      const tick = scenarioTicks[i];
-      const tickLinks = gcsLinkData.filter(l => l.scenarioCode === tick.scenarioCode && l.timeS === tick.timeS);
-      const avgOccupancy = tickLinks.reduce((sum, r) => sum + r.occupancy, 0) / (tickLinks.length || 1);
+    if (isCoordsActive) {
+      const logs: CSVTelemetry[] = [];
+      const predLogs: CSVTelemetry[] = [];
+      const startIdx = Math.max(0, playbackIndex - 15);
       
-      const predictionsForTick = gcsPredictions.filter(p => 
-        p.link === tickLinks[0]?.linkId
-      );
-      const avgPredQueue = predictionsForTick.reduce((sum, p) => sum + p.queuePred, 0) / (predictionsForTick.length || 1);
+      for (let i = startIdx; i <= playbackIndex; i++) {
+        const timeStr = uniqueTimestamps[i % uniqueTimestamps.length];
+        const tickLinks = coordsLinkData.filter(l => l.timestamp === timeStr);
+        if (tickLinks.length === 0) continue;
+        const avgOccupancy = tickLinks.reduce((sum, r) => sum + r.occupancy, 0) / tickLinks.length;
+        
+        const tickIdx = i % uniqueTimestamps.length;
+        const elapsedSec = tickIdx * 5;
+        const predictionsForTick = gcsPredictions.filter(p => 
+          p.link === tickLinks[0]?.linkId && p.predictionHorizonSec === (elapsedSec % 840)
+        );
+        const avgPredQueue = predictionsForTick.reduce((sum, p) => sum + p.queuePred, 0) / (predictionsForTick.length || 1);
 
-      logs.push({
-        timestamp: `${tick.scenarioCode} ${tick.timeS}`,
-        densityPercent: avgOccupancy * 100,
-        latitude: 11.2588,
-        longitude: 75.7804
-      });
+        logs.push({
+          timestamp: `${selectedDate} ${timeStr}`,
+          densityPercent: avgOccupancy,
+          latitude: 11.2588,
+          longitude: 75.7804
+        });
 
-      predLogs.push({
-        timestamp: `${tick.scenarioCode} ${tick.timeS}`,
-        densityPercent: Math.min(100, Math.max(5, avgPredQueue * 100)),
-        latitude: 11.2588,
-        longitude: 75.7804
-      });
+        predLogs.push({
+          timestamp: `${selectedDate} ${timeStr}`,
+          densityPercent: Math.min(100, Math.max(5, avgPredQueue * 100)),
+          latitude: 11.2588,
+          longitude: 75.7804
+        });
+      }
+      
+      setTelemetryLogs(logs);
+      setPredictionLogs(predLogs);
+    } else {
+      if (gcsLinkData.length === 0 || gcsTicks.length === 0) return;
+      const activeTick = gcsTicks[playbackIndex % gcsTicks.length];
+      if (!activeTick) return;
+
+      const scenarioTicks = gcsTicks.filter(t => t.scenarioCode === activeTick.scenarioCode);
+      const currentScenarioIndex = scenarioTicks.findIndex(t => t.timeS === activeTick.timeS);
+      
+      const logs: CSVTelemetry[] = [];
+      const predLogs: CSVTelemetry[] = [];
+
+      for (let i = 0; i <= currentScenarioIndex; i++) {
+        const tick = scenarioTicks[i];
+        const tickLinks = gcsLinkData.filter(l => l.scenarioCode === tick.scenarioCode && l.timeS === tick.timeS);
+        const avgOccupancy = tickLinks.reduce((sum, r) => sum + r.occupancy, 0) / (tickLinks.length || 1);
+        
+        const predictionsForTick = gcsPredictions.filter(p => 
+          p.link === tickLinks[0]?.linkId
+        );
+        const avgPredQueue = predictionsForTick.reduce((sum, p) => sum + p.queuePred, 0) / (predictionsForTick.length || 1);
+
+        logs.push({
+          timestamp: `${tick.scenarioCode} ${tick.timeS}`,
+          densityPercent: avgOccupancy * 100,
+          latitude: 11.2588,
+          longitude: 75.7804
+        });
+
+        predLogs.push({
+          timestamp: `${tick.scenarioCode} ${tick.timeS}`,
+          densityPercent: Math.min(100, Math.max(5, avgPredQueue * 100)),
+          latitude: 11.2588,
+          longitude: 75.7804
+        });
+      }
+
+      setTelemetryLogs(logs);
+      setPredictionLogs(predLogs);
     }
-
-    setTelemetryLogs(logs);
-    setPredictionLogs(predLogs);
-  }, [playbackIndex, gcsLinkData, gcsPredictions, gcsTicks]);
+  }, [playbackIndex, coordsLinkData, uniqueTimestamps, gcsLinkData, gcsTicks, gcsPredictions, selectedDate]);
 
   // Update nodes dynamically based on active CSV/XLSX link row
   useEffect(() => {
-    if (gcsLinkData.length === 0 || gcsTicks.length === 0) return;
-    const activeTick = gcsTicks[playbackIndex];
-    if (!activeTick) return;
+    const isCoordsActive = coordsLinkData.length > 0 && uniqueTimestamps.length > 0;
+    if (!isCoordsActive && (gcsLinkData.length === 0 || gcsTicks.length === 0)) return;
 
-    const activeLinks = gcsLinkData.filter(
-      l => l.scenarioCode === activeTick.scenarioCode && l.timeS === activeTick.timeS
-    );
+    const activeLinks = isCoordsActive
+      ? coordsLinkData.filter(l => l.timestamp === selectedTime)
+      : gcsLinkData.filter(l => {
+          const activeTick = gcsTicks[playbackIndex];
+          return activeTick && l.scenarioCode === activeTick.scenarioCode && l.timeS === activeTick.timeS;
+        });
 
     // Auto-detect incidents from link1 eventActive / lanesBlocked
     const newIncidentsFromGCS: Incident[] = [];
     activeLinks.forEach(link => {
-      if (link.eventActive || link.lanesBlocked > 0) {
+      const lanesBlocked = link.lanesBlocked || 0;
+      const eventActive = link.eventActive || false;
+      if (eventActive || lanesBlocked > 0) {
         const roadMeta = linkToRoadMap[link.linkId];
         if (roadMeta) {
           const priority: 'medium' | 'high' | 'critical' = 
-            link.lanesBlocked >= 2 ? 'critical' : 
-            link.lanesBlocked === 1 ? 'high' : 'medium';
+            lanesBlocked >= 2 ? 'critical' : 
+            lanesBlocked === 1 ? 'high' : 'medium';
           
           newIncidentsFromGCS.push({
-            id: `gcs-${link.linkId}-${link.scenarioCode}`,
-            type: link.lanesBlocked > 0 ? 'Lanes Blocked' : 'Road Obstruction',
+            id: `gcs-${link.linkId}-${link.scenarioCode || 'SC0011'}`,
+            type: lanesBlocked > 0 ? 'Lanes Blocked' : 'Road Obstruction',
             location: roadMeta.roadName,
             priority,
-            description: `Automated detection: ${link.lanesBlocked} lanes blocked. Event intensity: ${link.eventIntensity}, exposure: ${link.eventExposure}.`,
+            description: `Automated detection: ${lanesBlocked} lanes blocked. Event intensity: ${link.eventIntensity || 0}, exposure: ${link.eventExposure || 0}.`,
             status: 'active',
             timestamp: new Date().toISOString(),
-            tokenId: `TK-GCS-${link.linkId}-${link.scenarioCode}`,
+            tokenId: `TK-GCS-${link.linkId}-${link.scenarioCode || 'SC0011'}`,
             lat: roadMeta.lat,
             lng: roadMeta.lng,
             nearestJunction: roadMeta.junction,
@@ -396,7 +549,9 @@ export function useAppStore() {
           const avgQueueLength = records.reduce((sum, r) => sum + r.queueLength, 0) / records.length;
           const avgTravelTime = records.reduce((sum, r) => sum + r.travelTime, 0) / records.length;
 
-          const density = Math.max(5, Math.min(100, Math.round(avgOccupancy * 100)));
+          const density = Math.max(5, Math.min(100, Math.round(
+            isCoordsActive ? avgOccupancy : (avgOccupancy * 100)
+          )));
           const status = density >= 85 ? 'critical' :
                          density >= 65 ? 'heavy' :
                          density >= 40 ? 'moderate' : 'free';
@@ -424,24 +579,59 @@ export function useAppStore() {
       }
     });
 
+    // Apply What-If adjustments if active for this connection
+    if (isWhatIfActive && selectedLink) {
+      const lanesAdjustment = whatIfLanesBlocked * 22; // +22% density per blocked lane
+      const intensityAdjustment = whatIfEventIntensity * 0.25; // +25% density at max intensity
+      const retimingAdjustment = isRetimingApplied ? whatIfRetimingSeconds * 0.8 : 0; // -0.8% density per second applied
+
+      if (newStatuses[selectedLink]) {
+        const currentDensity = newStatuses[selectedLink].density;
+        const simulatedDensity = Math.max(5, Math.min(100, Math.round(currentDensity + lanesAdjustment + intensityAdjustment - retimingAdjustment)));
+        
+        const simulatedStatus: 'free' | 'moderate' | 'heavy' | 'critical' = 
+                               simulatedDensity >= 85 ? 'critical' :
+                               simulatedDensity >= 65 ? 'heavy' :
+                               simulatedDensity >= 40 ? 'moderate' : 'free';
+
+        const simulatedSpeed = Math.max(10, Math.round(newStatuses[selectedLink].speed - (lanesAdjustment * 0.4) - (intensityAdjustment * 0.2) + (retimingAdjustment * 0.3)));
+        const simulatedVolume = Math.max(10, Math.round(newStatuses[selectedLink].volume + (intensityAdjustment * 2.5) - (lanesAdjustment * 8)));
+        const simulatedTravelTime = parseFloat(Math.max(0.2, newStatuses[selectedLink].travelTime + (whatIfLanesBlocked * 0.5) + (whatIfEventIntensity * 0.015) - (isRetimingApplied ? whatIfRetimingSeconds * 0.03 : 0)).toFixed(1));
+        const simulatedQueue = Math.max(0, (newStatuses[selectedLink].queueLength || 0) + (whatIfLanesBlocked * 0.22) + (whatIfEventIntensity * 0.0025) - (isRetimingApplied ? whatIfRetimingSeconds * 0.015 : 0));
+
+        newStatuses[selectedLink] = {
+          status: simulatedStatus,
+          density: simulatedDensity,
+          speed: simulatedSpeed,
+          volume: simulatedVolume,
+          travelTime: simulatedTravelTime,
+          queueLength: simulatedQueue
+        };
+      }
+    }
+
     setLinkStatuses(newStatuses);
 
     setNodes(prevNodes => prevNodes.map(node => {
       const connectedLinkIds = nodeLinkConnections[node.id] || [];
       const linkRecords = activeLinks.filter(l => connectedLinkIds.includes(l.linkId));
 
+      let baseNodeData;
       if (linkRecords.length > 0) {
         const avgOccupancy = linkRecords.reduce((sum, r) => sum + r.occupancy, 0) / linkRecords.length;
         const avgSpeed = Math.round(linkRecords.reduce((sum, r) => sum + r.speed, 0) / linkRecords.length);
         const totalVolume = linkRecords.reduce((sum, r) => sum + r.volume, 0);
         
-        const density = Math.max(5, Math.min(100, Math.round(avgOccupancy * 100)));
+        const density = Math.max(5, Math.min(100, Math.round(
+          isCoordsActive ? avgOccupancy : (avgOccupancy * 100)
+        )));
         const vehicleCount = Math.round(totalVolume * 2);
-        const status = density >= 85 ? 'critical' :
+        const status: 'free' | 'moderate' | 'heavy' | 'critical' = 
+                       density >= 85 ? 'critical' :
                        density >= 65 ? 'heavy' :
                        density >= 40 ? 'moderate' : 'free';
 
-        return {
+        baseNodeData = {
           ...node,
           density,
           vehicleCount,
@@ -455,10 +645,11 @@ export function useAppStore() {
         const density = Math.max(5, Math.min(100, baseDensity + densityOffset));
         const vehicleCount = Math.round(density * 13);
         const avgSpeed = Math.max(5, Math.round(45 - (density * 0.35)));
-        const status = density >= 85 ? 'critical' :
+        const status: 'free' | 'moderate' | 'heavy' | 'critical' = 
+                       density >= 85 ? 'critical' :
                        density >= 65 ? 'heavy' :
                        density >= 40 ? 'moderate' : 'free';
-        return {
+        baseNodeData = {
           ...node,
           density,
           vehicleCount,
@@ -466,8 +657,39 @@ export function useAppStore() {
           status
         };
       }
+
+      // Apply What-If node density propagation
+      if (isWhatIfActive && selectedLink) {
+        const simulatedLinks = connectionToLinks[selectedLink] || [];
+        const hasIntersection = connectedLinkIds.some(id => simulatedLinks.includes(id));
+        if (hasIntersection) {
+          const lanesAdjustment = whatIfLanesBlocked * 15;
+          const intensityAdjustment = whatIfEventIntensity * 0.18;
+          const retimingAdjustment = isRetimingApplied ? whatIfRetimingSeconds * 0.5 : 0;
+          
+          const simulatedDensity = Math.max(5, Math.min(100, Math.round(baseNodeData.density + lanesAdjustment + intensityAdjustment - retimingAdjustment)));
+          const simulatedStatus: 'free' | 'moderate' | 'heavy' | 'critical' = 
+                                 simulatedDensity >= 85 ? 'critical' :
+                                 simulatedDensity >= 65 ? 'heavy' :
+                                 simulatedDensity >= 40 ? 'moderate' : 'free';
+          const simulatedSpeed = Math.max(10, Math.round(baseNodeData.avgSpeed - (lanesAdjustment * 0.3) - (intensityAdjustment * 0.15) + (retimingAdjustment * 0.2)));
+          
+          return {
+            ...baseNodeData,
+            density: simulatedDensity,
+            status: simulatedStatus,
+            avgSpeed: simulatedSpeed
+          };
+        }
+      }
+
+      return baseNodeData;
     }));
-  }, [playbackIndex, gcsLinkData, gcsPredictions, gcsTicks, predictionWindow, enableGcsIncidents]);
+  }, [
+    playbackIndex, gcsLinkData, gcsPredictions, gcsTicks, predictionWindow, enableGcsIncidents, 
+    coordsLinkData, uniqueTimestamps, selectedTime, selectedLink, isWhatIfActive, 
+    whatIfLanesBlocked, whatIfEventIntensity, whatIfRetimingSeconds, isRetimingApplied
+  ]);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(tokens));
@@ -744,6 +966,15 @@ export function useAppStore() {
     setIncidents(prev => prev.map(inc => inc.id === id ? { ...inc, ...updates } : inc));
   }, []);
 
+  const deleteIncident = useCallback((id: string) => {
+    setIncidents(prev => prev.filter(inc => inc.id !== id));
+    addNotification({
+      type: 'info',
+      title: 'INCIDENT REMOVED',
+      message: 'Incident was cleared from the system registry.',
+    });
+  }, [addNotification]);
+
   const updateEvent = useCallback((id: string, updates: Partial<PlannedEvent>) => {
     setEvents(prev => prev.map(ev => ev.id === id ? { ...ev, ...updates } : ev));
   }, []);
@@ -876,11 +1107,13 @@ export function useAppStore() {
     currentRole, setCurrentRole,
     updateIncidentStatus,
     updateIncident,
+    deleteIncident,
     updateEvent,
     updateDroneRoute,
     isDark, setIsDark,
     nodes,
     playbackIndex,
+    setPlaybackIndex,
     telemetryLogs,
     videoFrames,
     predictionLogs,
@@ -909,5 +1142,26 @@ export function useAppStore() {
     linkStatuses,
     enableGcsIncidents,
     setEnableGcsIncidents,
+    gcsPredictions,
+    uniqueTimestamps,
+    selectedTime,
+    setSelectedTime,
+    selectedDate,
+    setSelectedDate,
+    isPlaybackPlaying,
+    setIsPlaybackPlaying,
+    playbackSpeed,
+    setPlaybackSpeed,
+    coordsLinkData,
+    isWhatIfActive,
+    setIsWhatIfActive,
+    whatIfLanesBlocked,
+    setWhatIfLanesBlocked,
+    whatIfEventIntensity,
+    setWhatIfEventIntensity,
+    whatIfRetimingSeconds,
+    setWhatIfRetimingSeconds,
+    isRetimingApplied,
+    setIsRetimingApplied,
   };
 }

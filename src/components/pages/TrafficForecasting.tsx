@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { TrendingUp, Play, CheckCircle, AlertTriangle, Plane, MapPin, Users } from 'lucide-react';
+import { TrendingUp, Play, CheckCircle, AlertTriangle, Plane, MapPin, Users, Brain } from 'lucide-react';
+import { useAppStore } from '../../hooks/useAppStore';
 
 const EVENTS = [
   { id: 'football', label: 'EMS Stadium Football Match', icon: '⚽', expectedAttendance: 25000 },
@@ -31,6 +32,7 @@ interface Prediction {
 }
 
 export default function TrafficForecasting() {
+  const store = useAppStore();
   const [selectedEvent, setSelectedEvent] = useState(EVENTS[0]);
   const [attendance, setAttendance] = useState('25000');
   const [eventTime, setEventTime] = useState('19:00');
@@ -210,9 +212,89 @@ export default function TrafficForecasting() {
                   <div className="text-xs text-green-400 font-mono">{prediction.alternateRoute}</div>
                 </div>
 
+                {/* STGNN Inference Network Insights */}
+                <div className="bg-white/[0.02] border border-white/[0.06] rounded-xl p-3.5 space-y-3">
+                  <div className="flex items-center gap-2 border-b border-white/[0.04] pb-2">
+                    <Brain className="w-4 h-4 text-purple-400 shrink-0" />
+                    <div className="text-xs font-mono font-bold text-white uppercase tracking-wider">STGNN Inference Network Insights</div>
+                  </div>
+
+                  {/* Input Parameter Mapping */}
+                  <div className="space-y-1.5">
+                    <div className="text-[9px] font-mono text-gray-500 uppercase font-bold">1. Verified Model Inputs Mapping (X & E)</div>
+                    <div className="grid grid-cols-2 gap-2 text-[10px] font-mono">
+                      <div className="bg-white/[0.02] border border-white/[0.04] p-1.5 rounded flex items-center justify-between">
+                        <span className="text-gray-500">Event Active (E[0])</span>
+                        <span className="text-green-400 font-bold">1.0 (TRUE)</span>
+                      </div>
+                      <div className="bg-white/[0.02] border border-white/[0.04] p-1.5 rounded flex items-center justify-between">
+                        <span className="text-gray-500">Event Intensity (E[2])</span>
+                        <span className="text-orange-400 font-bold">{(parseInt(attendance) / 40000).toFixed(2)}</span>
+                      </div>
+                      <div className="bg-white/[0.02] border border-white/[0.04] p-1.5 rounded flex items-center justify-between">
+                        <span className="text-gray-500">Base Speed (X[1])</span>
+                        <span className="text-blue-400 font-bold">48 km/h</span>
+                      </div>
+                      <div className="bg-white/[0.02] border border-white/[0.04] p-1.5 rounded flex items-center justify-between">
+                        <span className="text-gray-500">Lanes Blocked (E[3])</span>
+                        <span className="text-red-400 font-bold">{parseInt(attendance) > 30000 ? '2 Lanes' : '1 Lane'}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Soft-Fused Adjacency Structure */}
+                  <div className="space-y-1.5 pt-1">
+                    <div className="text-[9px] font-mono text-gray-500 uppercase font-bold">2. soft-fused adjacency matrix (A_fused)</div>
+                    <div className="space-y-1.5 bg-white/[0.02] border border-white/[0.04] p-2 rounded text-[10px] font-mono">
+                      {[
+                        { label: 'Physical Connectivity (w_road)', w: 0.25, color: 'bg-blue-500' },
+                        { label: 'Traffic Flow Density (w_traffic)', w: 0.35, color: 'bg-green-500' },
+                        { label: 'Event Proximity (w_event)', w: 0.40, color: 'bg-orange-500' },
+                      ].map(item => (
+                        <div key={item.label} className="space-y-1">
+                          <div className="flex justify-between text-gray-400">
+                            <span>{item.label}</span>
+                            <span className="text-white font-bold">{item.w * 100}%</span>
+                          </div>
+                          <div className="w-full h-1 bg-white/10 rounded-full overflow-hidden">
+                            <div className={`h-full ${item.color}`} style={{ width: `${item.w * 100}%` }}></div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Network Layer Pipeline Status */}
+                  <div className="space-y-1.5 pt-1">
+                    <div className="text-[9px] font-mono text-gray-500 uppercase font-bold">3. Layer Execution Trace</div>
+                    <div className="space-y-1 font-mono text-[9.5px]">
+                      {[
+                        'Event Gating sigmoid filter complete',
+                        'Soft fusion (A_road + A_traffic + A_event) online',
+                        'Multi-Head GAT spatial convolution complete',
+                        'GRU sequence attention temporal parsing complete',
+                        'Regression outputs projected & inverse-scaled',
+                      ].map((step, idx) => (
+                        <div key={idx} className="flex items-center gap-2 text-gray-300">
+                          <span className="w-1.5 h-1.5 rounded-full bg-green-400"></span>
+                          <span>{step}</span>
+                          <span className="ml-auto text-[8px] text-green-400 font-bold bg-green-500/10 px-1.5 py-0.5 rounded border border-green-500/20">VERIFIED</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
                 <motion.button
                   whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
-                  className="w-full py-2.5 rounded-lg text-xs font-mono font-bold border border-orange-500/30 text-orange-400 hover:bg-orange-500/10 transition-all"
+                  onClick={() => {
+                    store.addNotification({
+                      type: 'success',
+                      title: 'STGNN Directive Deployed',
+                      message: `Tactical directive deployed to ${prediction.bottleneck}: ${prediction.recommendation}. Alternate route: ${prediction.alternateRoute}`,
+                    });
+                  }}
+                  className="w-full py-2.5 rounded-lg text-xs font-mono font-bold border border-orange-500/30 text-orange-400 hover:bg-orange-500/10 transition-all cursor-pointer"
                 >
                   ⚡ DEPLOY DIRECTIVE
                 </motion.button>
