@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Menu } from 'lucide-react';
 import Login from './components/pages/Login';
@@ -41,6 +41,14 @@ const PAGE_TITLES: Record<Page, string> = {
 export default function App() {
   const store = useAppStore();
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
+  const [isIntelOpen, setIsIntelOpen] = useState(false);
+
+  // Auto-open mobile intel drawer when a selection is made
+  useEffect(() => {
+    if (store.selectedNode || store.selectedLink) {
+      setIsIntelOpen(true);
+    }
+  }, [store.selectedNode, store.selectedLink]);
 
   if (!store.isAuthenticated) {
     return <Login onLogin={store.login} onSuccess={() => store.setIsAuthenticated(true)} />;
@@ -96,6 +104,7 @@ export default function App() {
             isDark={store.isDark}
             linkStatuses={store.linkStatuses}
             incidents={store.incidents}
+            events={store.events}
           />
           <IncidentAlerts incidents={store.incidents} tokens={store.tokens} />
           </div>
@@ -123,14 +132,15 @@ export default function App() {
             nodes={store.nodes}
             onUpdateIncident={store.updateIncident}
             onDeleteIncident={store.deleteIncident}
+            isDark={store.isDark}
           />
         );
       case 'events':
-        return <EventPlanningCenter events={store.events} onCreateEvent={store.createEvent} onUpdateEvent={store.updateEvent} />;
+        return <EventPlanningCenter events={store.events} onCreateEvent={store.createEvent} onUpdateEvent={store.updateEvent} isDark={store.isDark} />;
       case 'drones':
         return <DroneOperations drones={store.drones} nodes={store.nodes} />;
       case 'history':
-        return <HistoricalIntelligence tokens={store.tokens} />;
+        return <HistoricalIntelligence tokens={store.tokens} isDark={store.isDark} />;
       case 'alerts':
         return <AlertGenerator onCreateToken={store.createToken} />;
       case 'reports':
@@ -190,7 +200,7 @@ export default function App() {
           <button
             onClick={() => setMobileDrawerOpen(true)}
             aria-label="Open menu"
-            className="md:hidden absolute top-3 left-2 z-30 w-9 h-9 rounded-lg bg-[#0F1117] border border-white/[0.08] flex items-center justify-center text-gray-300 hover:text-white"
+            className="md:hidden absolute top-3 left-2 z-[1010] w-9 h-9 rounded-lg bg-[#0F1117] border border-white/[0.08] flex items-center justify-center text-gray-300 hover:text-white"
           >
             <Menu className="w-4 h-4" />
           </button>
@@ -224,55 +234,139 @@ export default function App() {
             </AnimatePresence>
           </main>
 
-           {/* Right intelligence panel — desktop only, contextual pages */}
+          {/* Right intelligence panel — responsive overlay drawer on mobile, static on desktop */}
           {showIntelPanel && (
-            <div className="hidden lg:block h-full">
-              <IntelPanel
-                nodes={store.nodes}
-                selectedNode={store.selectedNode}
-                selectedLink={store.selectedLink}
-                drones={store.drones}
-                predictionWindow={store.predictionWindow}
-                linkStatuses={store.linkStatuses}
-                incidents={store.incidents}
-                onClearSelection={() => {
-                  store.setSelectedNode(null);
-                  store.setSelectedLink(null);
-                }}
-                selectedTime={store.selectedTime}
-                coordsLinkData={store.coordsLinkData}
-                gcsPredictions={store.gcsPredictions}
-                onSelectLink={store.setSelectedLink}
-                isWhatIfActive={store.isWhatIfActive}
-                setIsWhatIfActive={store.setIsWhatIfActive}
-                whatIfLanesBlocked={store.whatIfLanesBlocked}
-                setWhatIfLanesBlocked={store.setWhatIfLanesBlocked}
-                whatIfEventIntensity={store.whatIfEventIntensity}
-                setWhatIfEventIntensity={store.setWhatIfEventIntensity}
-                whatIfRetimingSeconds={store.whatIfRetimingSeconds}
-                setWhatIfRetimingSeconds={store.setWhatIfRetimingSeconds}
-                isRetimingApplied={store.isRetimingApplied}
-                setIsRetimingApplied={store.setIsRetimingApplied}
-                uniqueTimestamps={store.uniqueTimestamps}
-                onTimeChange={store.setSelectedTime}
-                playbackIndex={store.playbackIndex}
-                setPlaybackIndex={store.setPlaybackIndex}
-                isPlaybackPlaying={store.isPlaybackPlaying}
-                setIsPlaybackPlaying={store.setIsPlaybackPlaying}
-                playbackSpeed={store.playbackSpeed}
-                setPlaybackSpeed={store.setPlaybackSpeed}
-                selectedDate={store.selectedDate}
-                setSelectedDate={store.setSelectedDate}
-              />
-            </div>
+            <>
+              {/* Desktop view */}
+              <div className="hidden lg:block h-full shrink-0">
+                <IntelPanel
+                  nodes={store.nodes}
+                  selectedNode={store.selectedNode}
+                  selectedLink={store.selectedLink}
+                  drones={store.drones}
+                  predictionWindow={store.predictionWindow}
+                  linkStatuses={store.linkStatuses}
+                  incidents={store.incidents}
+                  onClearSelection={() => {
+                    store.setSelectedNode(null);
+                    store.setSelectedLink(null);
+                  }}
+                  selectedTime={store.selectedTime}
+                  coordsLinkData={store.coordsLinkData}
+                  gcsPredictions={store.gcsPredictions}
+                  onSelectLink={store.setSelectedLink}
+                  isWhatIfActive={store.isWhatIfActive}
+                  setIsWhatIfActive={store.setIsWhatIfActive}
+                  whatIfLanesBlocked={store.whatIfLanesBlocked}
+                  setWhatIfLanesBlocked={store.setWhatIfLanesBlocked}
+                  whatIfEventIntensity={store.whatIfEventIntensity}
+                  setWhatIfEventIntensity={store.setWhatIfEventIntensity}
+                  whatIfRetimingSeconds={store.whatIfRetimingSeconds}
+                  setWhatIfRetimingSeconds={store.setWhatIfRetimingSeconds}
+                  isRetimingApplied={store.isRetimingApplied}
+                  setIsRetimingApplied={store.setIsRetimingApplied}
+                  uniqueTimestamps={store.uniqueTimestamps}
+                  onTimeChange={store.setSelectedTime}
+                  playbackIndex={store.playbackIndex}
+                  setPlaybackIndex={store.setPlaybackIndex}
+                  isPlaybackPlaying={store.isPlaybackPlaying}
+                  setIsPlaybackPlaying={store.setIsPlaybackPlaying}
+                  playbackSpeed={store.playbackSpeed}
+                  setPlaybackSpeed={store.setPlaybackSpeed}
+                  selectedDate={store.selectedDate}
+                  setSelectedDate={store.setSelectedDate}
+                />
+              </div>
+
+              {/* Mobile overlay drawer */}
+              <AnimatePresence>
+                {isIntelOpen && (
+                  <div className="lg:hidden fixed inset-0 flex flex-col justify-end" style={{ zIndex: 9995 }}>
+                    {/* Backdrop */}
+                    <motion.div
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      onClick={() => setIsIntelOpen(false)}
+                      className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+                    />
+                    {/* Drawer Content */}
+                    <motion.div
+                      initial={{ y: '100%' }}
+                      animate={{ y: 0 }}
+                      exit={{ y: '100%' }}
+                      transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+                      className="relative w-full h-[65vh] max-h-[85vh] shadow-2xl flex flex-col bg-[#0A0C10] z-10 rounded-t-2xl overflow-hidden border-t border-white/[0.08]"
+                    >
+                      {/* Drag handle or close area */}
+                      <div className="w-full flex justify-center py-2 bg-[#0F1117] border-b border-white/[0.06] cursor-pointer" onClick={() => setIsIntelOpen(false)}>
+                        <div className="w-12 h-1 bg-white/20 rounded-full hover:bg-white/40 transition-colors" />
+                      </div>
+                      <div className="flex-1 overflow-y-auto">
+                        <IntelPanel
+                          nodes={store.nodes}
+                          selectedNode={store.selectedNode}
+                          selectedLink={store.selectedLink}
+                          drones={store.drones}
+                          predictionWindow={store.predictionWindow}
+                          linkStatuses={store.linkStatuses}
+                          incidents={store.incidents}
+                          onClearSelection={() => {
+                            store.setSelectedNode(null);
+                            store.setSelectedLink(null);
+                          }}
+                          selectedTime={store.selectedTime}
+                          coordsLinkData={store.coordsLinkData}
+                          gcsPredictions={store.gcsPredictions}
+                          onSelectLink={store.setSelectedLink}
+                          isWhatIfActive={store.isWhatIfActive}
+                          setIsWhatIfActive={store.setIsWhatIfActive}
+                          whatIfLanesBlocked={store.whatIfLanesBlocked}
+                          setWhatIfLanesBlocked={store.setWhatIfLanesBlocked}
+                          whatIfEventIntensity={store.whatIfEventIntensity}
+                          setWhatIfEventIntensity={store.setWhatIfEventIntensity}
+                          whatIfRetimingSeconds={store.whatIfRetimingSeconds}
+                          setWhatIfRetimingSeconds={store.setWhatIfRetimingSeconds}
+                          isRetimingApplied={store.isRetimingApplied}
+                          setIsRetimingApplied={store.setIsRetimingApplied}
+                          uniqueTimestamps={store.uniqueTimestamps}
+                          onTimeChange={store.setSelectedTime}
+                          playbackIndex={store.playbackIndex}
+                          setPlaybackIndex={store.setPlaybackIndex}
+                          isPlaybackPlaying={store.isPlaybackPlaying}
+                          setIsPlaybackPlaying={store.setIsPlaybackPlaying}
+                          playbackSpeed={store.playbackSpeed}
+                          setPlaybackSpeed={store.setPlaybackSpeed}
+                          selectedDate={store.selectedDate}
+                          setSelectedDate={store.setSelectedDate}
+                          onClose={() => setIsIntelOpen(false)}
+                        />
+                      </div>
+                    </motion.div>
+                  </div>
+                )}
+              </AnimatePresence>
+            </>
           )}
         </div>
       </div>
 
+      {/* Floating toggle button for mobile/tablet controls */}
+      {showIntelPanel && !isIntelOpen && (
+        <button
+          onClick={() => setIsIntelOpen(true)}
+          className="lg:hidden fixed bottom-6 right-6 w-12 h-12 rounded-full bg-orange-500 hover:bg-orange-600 text-black shadow-[0_0_15px_rgba(249,115,22,0.4)] flex items-center justify-center font-bold text-sm"
+          style={{ zIndex: 9990 }}
+          title="Open Controls"
+        >
+          <Menu className="w-5 h-5" />
+        </button>
+      )}
+
       {/* Toast notifications */}
       <ToastStack
-        notifications={store.notifications}
-        onDismiss={store.dismissNotification}
+        notifications={store.toasts}
+        onDismiss={store.dismissToast}
         onViewToken={handleViewToken}
       />
     </div>

@@ -16,6 +16,7 @@ interface IncidentCenterProps {
   nodes: TrafficNode[];
   onUpdateIncident: (id: string, updates: Partial<Incident>) => void;
   onDeleteIncident: (id: string) => void;
+  isDark: boolean;
 }
 
 const junctionMap: Record<string, string> = {
@@ -51,7 +52,8 @@ export default function IncidentCenter({
   setEnableGcsIncidents,
   nodes,
   onUpdateIncident,
-  onDeleteIncident
+  onDeleteIncident,
+  isDark
 }: IncidentCenterProps) {
   const [viewMode, setViewMode] = useState<'feed' | 'rankings'>('feed');
   const [showModal, setShowModal] = useState(false);
@@ -538,7 +540,7 @@ export default function IncidentCenter({
         {showModal && (
           <motion.div
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            className="fixed inset-0 z-[2000] flex items-center justify-center p-4"
             style={{ background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(8px)' }}
             onClick={e => { if (e.target === e.currentTarget) setShowModal(false); }}
           >
@@ -668,7 +670,7 @@ export default function IncidentCenter({
         {viewingIncident && (
           <motion.div
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            className="fixed inset-0 z-[2000] flex items-center justify-center p-4"
             style={{ background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(8px)' }}
             onClick={e => { if (e.target === e.currentTarget) setViewingIncident(null); }}
           >
@@ -715,6 +717,7 @@ export default function IncidentCenter({
                     lng={editLoc?.lng ?? viewingIncident.lng!}
                     label={editLoc?.nearestJunction || viewingIncident.nearestJunction || viewingIncident.location}
                     color={viewingIncident.priority === 'critical' ? '#EF4444' : viewingIncident.priority === 'high' ? '#F97316' : '#EAB308'}
+                    isDark={isDark}
                   />
                 ) : (
                   <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-4 text-center text-[11px] text-gray-500 font-mono">

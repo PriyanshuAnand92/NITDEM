@@ -36,7 +36,7 @@ export default function DroneOperations({ drones, nodes }: DroneOpsProps) {
       </div>
 
       {/* Fleet overview */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4">
         {drones.map((drone, i) => {
           const targetNode = nodes.find(n => n.id === drone.targetNodeId);
           return (

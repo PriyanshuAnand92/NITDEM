@@ -36,7 +36,7 @@ export default function Header({ isDark, onToggleTheme, notifications, unreadCou
   }, [showNotifs]);
 
   return (
-    <header className="h-14 border-b border-white/[0.06] flex items-center justify-between pl-12 pr-2 md:px-4 shrink-0 relative z-[100] gap-2 bg-[#0F1117]">
+    <header className="h-14 border-b border-white/[0.06] flex items-center justify-between pl-12 pr-2 md:px-4 shrink-0 relative z-[1005] gap-2 bg-[#0F1117]">
       
       {/* Left: Status indicators */}
       <div className="flex items-center gap-2 md:gap-4 min-w-0">
@@ -92,7 +92,7 @@ export default function Header({ isDark, onToggleTheme, notifications, unreadCou
             <motion.div
               initial={{ opacity: 0, y: 8, scale: 0.95 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
-              className="absolute right-0 top-10 w-[calc(100vw-1rem)] max-w-xs sm:w-72 rounded-xl border border-white/[0.08] overflow-hidden z-50 bg-[#151820]">
+              className="absolute right-0 top-10 w-[calc(100vw-1rem)] max-w-xs sm:w-72 rounded-xl border border-white/[0.08] overflow-hidden z-[1050] bg-[#151820]">
               <div className="px-3 py-2 border-b border-white/[0.06] flex items-center justify-between">
                 <span className="text-xs font-mono text-gray-400">NOTIFICATIONS</span>
                 <span className="text-[10px] text-orange-400">{notifications.length} active</span>

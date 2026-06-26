@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "node -e \"const { spawn } = require('child_process'); spawn('node', ['sync_datasets.cjs'], { stdio: 'inherit' }); spawn('npx', ['vite'], { stdio: 'inherit', shell: true });\"",
     "build": "tsc && vite build",
     "build:dev": "vite build --mode development",
     "preview": "vite preview"

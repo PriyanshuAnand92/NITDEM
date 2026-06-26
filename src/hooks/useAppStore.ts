@@ -53,6 +53,21 @@ const zoneCoordinates: Record<string, { lat: number; lng: number }> = {
   'Custom Area': { lat: 11.2588, lng: 75.7873 },
 };
 
+const getCoordinatesForLocation = (location: string): { lat: number; lng: number } | null => {
+  if (!location) return null;
+  const clean = location.replace(/\s+(Junction|Area)$/i, '').trim();
+  if (zoneCoordinates[location]) return zoneCoordinates[location];
+  if (zoneCoordinates[clean]) return zoneCoordinates[clean];
+  
+  for (const key of Object.keys(zoneCoordinates)) {
+    const cleanKey = key.replace(/\s+(Junction|Area)$/i, '').trim();
+    if (key.toLowerCase() === location.toLowerCase() || cleanKey.toLowerCase() === clean.toLowerCase()) {
+      return zoneCoordinates[key];
+    }
+  }
+  return null;
+};
+
 const STORAGE_KEY = 'nitdem_tokens';
 const INCIDENTS_KEY = 'nitdem_incidents';
 const EVENTS_KEY = 'nitdem_events';
@@ -104,6 +119,7 @@ export function useAppStore() {
     } catch { return []; }
   });
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [toasts, setToasts] = useState<Notification[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [events, setEvents] = useState<PlannedEvent[]>(() => {
     try {
@@ -146,8 +162,12 @@ export function useAppStore() {
   const GCS_OUTPUT_URL = 'https://storage.googleapis.com/output_measures';
 
   const [gcsLinkData, setGcsLinkData] = useState<GCSLinkData[]>([]);
-  const [coordsLinkData, setCoordsLinkData] = useState<GCSLinkData[]>([]);
   const [gcsPredictions, setGcsPredictions] = useState<GCSPredictionData[]>([]);
+
+  // States for pre-parsed GCS coordinates and metric datasets
+  const [coordsByTimestamp, setCoordsByTimestamp] = useState<Record<string, GCSLinkData[]>>({});
+  const [uniqueTimestamps, setUniqueTimestamps] = useState<string[]>([]);
+  const [linkCoordsLookup, setLinkCoordsLookup] = useState<Record<string, any>>({});
 
   // Timeline seek states
   const [selectedTime, setSelectedTime] = useState<string>('00:00:00');
@@ -174,109 +194,64 @@ export function useAppStore() {
     return ticks;
   }, [gcsLinkData]);
 
-  // Load CSV/Excel data and poll for changes
+  // Load new JSON datasets (I1a.json and O1.json) and poll every 5 seconds
   useEffect(() => {
-    const fetchGCSData = () => {
-      const xlsxUrl = `${GCS_INPUT_URL}/link1.xlsx`;
-      const localCsvUrl = '/link1.csv';
-      const predictionsUrl = USE_LIVE_GCS 
-        ? `${GCS_OUTPUT_URL}/traffic_management_results.csv` 
-        : '/traffic_management_results.csv';
-
-      // Load Link Data (Excel from GCS, or fallback CSV locally)
-      if (USE_LIVE_GCS) {
-        fetch(xlsxUrl)
-          .then(r => {
-            if (!r.ok) throw new Error(`Status ${r.status}`);
-            return r.arrayBuffer();
-          })
-          .then(buffer => {
-            const parsed = parseXLSXData(buffer);
-            setGcsLinkData(parsed);
-          })
-          .catch(err => {
-            console.error("Error loading GCS link1.xlsx, falling back to local link1.csv", err);
-            fetch(localCsvUrl)
-              .then(r => r.text())
-              .then(text => setGcsLinkData(parseLink1CSV(text)))
-              .catch(err2 => console.error("Error loading local link1.csv", err2));
-          });
-      } else {
-        fetch(localCsvUrl)
-          .then(r => r.text())
-          .then(text => setGcsLinkData(parseLink1CSV(text)))
-          .catch(err => console.error("Error loading local link1.csv", err));
-      }
-
-      // Load GCS Coordinates Dataset
-      const coordsGcsUrl = `${GCS_INPUT_URL}/Kerala_Traffic_Dataset_With_Coordinates.csv`;
-      const coordsLocalUrl = `/Kerala_Traffic_Dataset_With_Coordinates.csv`;
-
-      fetch(coordsGcsUrl)
+    const fetchNewDatasets = () => {
+      // Load I1a.json for coordinates and traffic metrics (Intelligent Map)
+      fetch('/I1a.json')
         .then(r => {
-          if (!r.ok) throw new Error(`Status ${r.status}`);
-          return r.text();
+          if (!r.ok) throw new Error(`Failed to fetch /I1a.json: status ${r.status}`);
+          return r.json();
         })
-        .then(text => {
-          setCoordsLinkData(parseCoordinatesCSV(text));
+        .then(data => {
+          if (data) {
+            setCoordsByTimestamp(data.coordsByTimestamp || data.coordsByTimestamp || {});
+            setUniqueTimestamps(data.uniqueTimestamps || []);
+            setLinkCoordsLookup(data.linkCoords || {});
+          }
         })
-        .catch(err => {
-          console.error("Error loading GCS coordinates CSV, trying local fallback", err);
-          fetch(coordsLocalUrl)
-            .then(r => {
-              if (!r.ok) throw new Error(`Status ${r.status}`);
-              return r.text();
-            })
-            .then(text => setCoordsLinkData(parseCoordinatesCSV(text)))
-            .catch(err2 => console.error("Error loading local coordinates CSV", err2));
-        });
+        .catch(err => console.error("Error loading I1a.json", err));
 
-      // Load Prediction Data
-      if (USE_LIVE_GCS) {
-        fetch(predictionsUrl)
-          .then(r => {
-            if (!r.ok) throw new Error(`Status ${r.status}`);
-            return r.text();
-          })
-          .then(text => {
-            setGcsPredictions(parsePredictionsCSV(text));
-          })
-          .catch(err => {
-            console.error("Error loading GCS predictions CSV, trying local fallback", err);
-            fetch('/traffic_management_results.csv')
-              .then(r => {
-                if (!r.ok) throw new Error(`Status ${r.status}`);
-                return r.text();
-              })
-              .then(text => setGcsPredictions(parsePredictionsCSV(text)))
-              .catch(err2 => console.error("Error loading local predictions CSV fallback", err2));
-          });
-      } else {
-        fetch('/traffic_management_results.csv')
-          .then(r => {
-            if (!r.ok) throw new Error(`Status ${r.status}`);
-            return r.text();
-          })
-          .then(text => setGcsPredictions(parsePredictionsCSV(text)))
-          .catch(err => console.error("Error loading local predictions CSV", err));
-      }
+      // Load O1.json for gcsPredictions (20 min forecast)
+      fetch('/O1.json')
+        .then(r => {
+          if (!r.ok) throw new Error(`Failed to fetch /O1.json: status ${r.status}`);
+          return r.json();
+        })
+        .then(data => {
+          if (data) {
+            setGcsPredictions(data);
+          }
+        })
+        .catch(err => console.error("Error loading O1.json", err));
     };
 
-    fetchGCSData();
-    
-    // Set up polling interval: 10 seconds for live GCS updates
-    const pollInterval = setInterval(fetchGCSData, USE_LIVE_GCS ? 10000 : 300000);
-    return () => clearInterval(pollInterval);
-  }, [USE_LIVE_GCS]);
+    fetchNewDatasets();
 
-  // Unique timestamps computed dynamically from the coordinates data
-  const uniqueTimestamps = useMemo(() => {
-    const times = new Set<string>();
-    for (const item of coordsLinkData) {
-      if (item.timestamp) times.add(item.timestamp);
-    }
-    return Array.from(times).sort();
-  }, [coordsLinkData]);
+    // Poll every 5 seconds
+    const pollInterval = setInterval(fetchNewDatasets, 5000);
+    return () => clearInterval(pollInterval);
+  }, []);
+
+  // Expose computed coordsLinkData dynamically for the currently selected time's active links
+  const coordsLinkData = useMemo(() => {
+    const rawLinks = coordsByTimestamp[selectedTime] || [];
+    return rawLinks.map((link: any) => ({
+      ...link,
+      timestamp: selectedTime,
+      scenarioCode: 'SC0011',
+      timeS: '600-900',
+      ...(linkCoordsLookup[link.linkId] || {})
+    }));
+  }, [coordsByTimestamp, selectedTime, linkCoordsLookup]);
+
+  // Pre-calculated seconds for each unique timestamp to optimize loops
+  const uniqueTimestampsSeconds = useMemo(() => {
+    return uniqueTimestamps.map(t => {
+      const parts = t.split(':').map(Number);
+      return (parts[0] || 0) * 3600 + (parts[1] || 0) * 60 + (parts[2] || 0);
+    });
+  }, [uniqueTimestamps]);
 
   // Playback timer for GCS ticks (Coordinate dataset takes priority)
   useEffect(() => {
@@ -294,10 +269,8 @@ export function useAppStore() {
         
         let closestIdx = 0;
         let minDiff = Infinity;
-        for (let i = 0; i < uniqueTimestamps.length; i++) {
-          const parts = uniqueTimestamps[i].split(':').map(Number);
-          const sec = (parts[0] || 0) * 3600 + (parts[1] || 0) * 60 + (parts[2] || 0);
-          const diff = Math.abs(sec - targetSec);
+        for (let i = 0; i < uniqueTimestampsSeconds.length; i++) {
+          const diff = Math.abs(uniqueTimestampsSeconds[i] - targetSec);
           if (diff < minDiff) {
             minDiff = diff;
             closestIdx = i;
@@ -320,7 +293,7 @@ export function useAppStore() {
       }, 2000);
       return () => clearInterval(interval);
     }
-  }, [isAuthenticated, coordsLinkData, uniqueTimestamps, gcsTicks, isPlaybackPlaying, playbackSpeed]);
+  }, [isAuthenticated, coordsLinkData, uniqueTimestamps, uniqueTimestampsSeconds, gcsTicks, isPlaybackPlaying, playbackSpeed]);
 
   // Synchronize selectedTime with playbackIndex
   useEffect(() => {
@@ -341,7 +314,7 @@ export function useAppStore() {
       
       for (let i = startIdx; i <= playbackIndex; i++) {
         const timeStr = uniqueTimestamps[i % uniqueTimestamps.length];
-        const tickLinks = coordsLinkData.filter(l => l.timestamp === timeStr);
+        const tickLinks = coordsByTimestamp[timeStr] || [];
         if (tickLinks.length === 0) continue;
         const avgOccupancy = tickLinks.reduce((sum, r) => sum + r.occupancy, 0) / tickLinks.length;
         
@@ -408,7 +381,7 @@ export function useAppStore() {
       setTelemetryLogs(logs);
       setPredictionLogs(predLogs);
     }
-  }, [playbackIndex, coordsLinkData, uniqueTimestamps, gcsLinkData, gcsTicks, gcsPredictions, selectedDate]);
+  }, [playbackIndex, coordsLinkData, uniqueTimestamps, coordsByTimestamp, gcsLinkData, gcsTicks, gcsPredictions, selectedDate]);
 
   // Update nodes dynamically based on active CSV/XLSX link row
   useEffect(() => {
@@ -416,7 +389,7 @@ export function useAppStore() {
     if (!isCoordsActive && (gcsLinkData.length === 0 || gcsTicks.length === 0)) return;
 
     const activeLinks = isCoordsActive
-      ? coordsLinkData.filter(l => l.timestamp === selectedTime)
+      ? (coordsByTimestamp[selectedTime] || [])
       : gcsLinkData.filter(l => {
           const activeTick = gcsTicks[playbackIndex];
           return activeTick && l.scenarioCode === activeTick.scenarioCode && l.timeS === activeTick.timeS;
@@ -823,16 +796,31 @@ export function useAppStore() {
       timestamp: new Date().toISOString(),
       read: false,
     };
-    setNotifications(prev => [n, ...prev].slice(0, 10));
+    // Keep up to 30 historical notifications in the dropdown
+    setNotifications(prev => [n, ...prev].slice(0, 30));
+    
+    // Add to transient toasts list
+    setToasts(prev => [n, ...prev]);
     setTimeout(() => {
-      setNotifications(prev => prev.filter(x => x.id !== n.id));
+      setToasts(prev => prev.filter(x => x.id !== n.id));
     }, 8000);
   }, []);
 
   const createToken = useCallback((data: Omit<Token, 'id' | 'timestamp'>) => {
+    let lat = data.lat;
+    let lng = data.lng;
+    
+    if (!lat && !lng && data.location) {
+      const coords = getCoordinatesForLocation(data.location);
+      if (coords) {
+        lat = coords.lat;
+        lng = coords.lng;
+      }
+    }
+
     let mapImage = data.mapImage;
-    if (!mapImage && data.lat && data.lng) {
-      mapImage = `https://static-maps.yandex.ru/1.x/?ll=${data.lng},${data.lat}&z=15&l=map&size=450,300&pt=${data.lng},${data.lat},pm2orl`;
+    if (!mapImage && lat && lng) {
+      mapImage = `https://static-maps.yandex.ru/1.x/?ll=${lng},${lat}&z=15&l=map&size=450,300&pt=${lng},${lat},pm2orl`;
     }
     
     const token: Token = {
@@ -840,6 +828,8 @@ export function useAppStore() {
       id: generateTokenId(),
       timestamp: new Date().toISOString(),
       mapImage,
+      lat,
+      lng,
     };
     setTokens(prev => [token, ...prev]);
     addNotification({
@@ -886,6 +876,17 @@ export function useAppStore() {
   }, [addNotification]);
 
   const logIncident = useCallback((data: Omit<Incident, 'id' | 'timestamp' | 'tokenId' | 'status'>) => {
+    let lat = data.lat;
+    let lng = data.lng;
+    
+    if (!lat && !lng && data.location) {
+      const coords = getCoordinatesForLocation(data.location);
+      if (coords) {
+        lat = coords.lat;
+        lng = coords.lng;
+      }
+    }
+
     const token = createToken({
       type: data.type,
       priority: data.priority,
@@ -893,11 +894,13 @@ export function useAppStore() {
       status: 'pending',
       description: data.description,
       generatedBy: 'Operator: admin',
-      lat: data.lat,
-      lng: data.lng,
+      lat,
+      lng,
     });
     const incident: Incident = {
       ...data,
+      lat,
+      lng,
       id: Math.random().toString(36).slice(2),
       timestamp: new Date().toISOString(),
       tokenId: token.id,
@@ -905,8 +908,8 @@ export function useAppStore() {
     };
     setIncidents(prev => {
       const next = [incident, ...prev];
-      if (isAutoDispatch && data.lat && data.lng) {
-        const closestDrone = findClosestAvailableDrone(data.lat, data.lng, drones);
+      if (isAutoDispatch && lat && lng) {
+        const closestDrone = findClosestAvailableDrone(lat, lng, drones);
         if (closestDrone) {
           const targetNodeId = junctionMap[data.nearestJunction || ''] || 'stadium';
           // Dispatch drone immediately
@@ -963,7 +966,40 @@ export function useAppStore() {
   }, [addNotification]);
 
   const updateIncident = useCallback((id: string, updates: Partial<Incident>) => {
-    setIncidents(prev => prev.map(inc => inc.id === id ? { ...inc, ...updates } : inc));
+    setIncidents(prev => prev.map(inc => {
+      if (inc.id === id) {
+        const merged = { ...inc, ...updates };
+        if (updates.location && !updates.lat && !updates.lng) {
+          const coords = getCoordinatesForLocation(updates.location);
+          if (coords) {
+            merged.lat = coords.lat;
+            merged.lng = coords.lng;
+          }
+        }
+        
+        // Synchronize changes to the associated token
+        setTokens(tPrev => tPrev.map(t => {
+          if (t.id === inc.tokenId) {
+            return {
+              ...t,
+              type: merged.type,
+              priority: merged.priority,
+              location: merged.location,
+              description: merged.description,
+              lat: merged.lat,
+              lng: merged.lng,
+              mapImage: (merged.lat && merged.lng)
+                ? `https://static-maps.yandex.ru/1.x/?ll=${merged.lng},${merged.lat}&z=15&l=map&size=450,300&pt=${merged.lng},${merged.lat},pm2orl`
+                : t.mapImage,
+            };
+          }
+          return t;
+        }));
+
+        return merged;
+      }
+      return inc;
+    }));
   }, []);
 
   const deleteIncident = useCallback((id: string) => {
@@ -976,7 +1012,40 @@ export function useAppStore() {
   }, [addNotification]);
 
   const updateEvent = useCallback((id: string, updates: Partial<PlannedEvent>) => {
-    setEvents(prev => prev.map(ev => ev.id === id ? { ...ev, ...updates } : ev));
+    setEvents(prev => prev.map(ev => {
+      if (ev.id === id) {
+        const merged = { ...ev, ...updates };
+        if (updates.zoneName && !updates.lat && !updates.lng) {
+          const coords = getCoordinatesForLocation(updates.zoneName);
+          if (coords) {
+            merged.lat = coords.lat;
+            merged.lng = coords.lng;
+          }
+        }
+
+        // Synchronize changes to the associated token
+        setTokens(tPrev => tPrev.map(t => {
+          if (t.id === ev.tokenId) {
+            return {
+              ...t,
+              type: `Event: ${merged.type}`,
+              priority: merged.priority,
+              location: merged.zoneName || `${merged.lat?.toFixed(4)}, ${merged.lng?.toFixed(4)}`,
+              description: `${merged.name} — ${merged.description || 'No additional details'}. Expected attendance: ${merged.expectedAttendance.toLocaleString()}.`,
+              lat: merged.lat,
+              lng: merged.lng,
+              mapImage: (merged.lat && merged.lng)
+                ? `https://static-maps.yandex.ru/1.x/?ll=${merged.lng},${merged.lat}&z=15&l=map&size=450,300&pt=${merged.lng},${merged.lat},pm2orl`
+                : t.mapImage,
+            };
+          }
+          return t;
+        }));
+
+        return merged;
+      }
+      return ev;
+    }));
   }, []);
 
   const updateDroneRoute = useCallback((droneId: string, nodeIds: string[]) => {
@@ -999,7 +1068,7 @@ export function useAppStore() {
     
     if (!lat && !lng) {
       if (data.zoneName) {
-        const coords = zoneCoordinates[data.zoneName];
+        const coords = getCoordinatesForLocation(data.zoneName);
         if (coords) {
           lat = coords.lat;
           lng = coords.lng;
@@ -1031,6 +1100,8 @@ export function useAppStore() {
       id: Math.random().toString(36).slice(2),
       tokenId: token.id,
       createdAt: new Date().toISOString(),
+      lat,
+      lng,
     };
     setEvents(prev => [event, ...prev]);
     return event;
@@ -1098,6 +1169,10 @@ export function useAppStore() {
     setNotifications(prev => prev.filter(n => n.id !== id));
   }, []);
 
+  const dismissToast = useCallback((id: string) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  }, []);
+
   return {
     isAuthenticated, setIsAuthenticated,
     currentPage, setCurrentPage,
@@ -1163,5 +1238,7 @@ export function useAppStore() {
     setWhatIfRetimingSeconds,
     isRetimingApplied,
     setIsRetimingApplied,
+    toasts,
+    dismissToast,
   };
 }

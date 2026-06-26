@@ -1,4 +1,4 @@
-import * as XLSX from 'xlsx';
+
 
 export interface CSVTelemetry {
   timestamp: string;
@@ -168,7 +168,8 @@ export function parseDensityCSV(text: string): CSVDensityFrame[] {
   return results;
 }
 
-export function parseXLSXData(buffer: ArrayBuffer): GCSLinkData[] {
+export async function parseXLSXData(buffer: ArrayBuffer): Promise<GCSLinkData[]> {
+  const XLSX = await import('xlsx');
   const workbook = XLSX.read(buffer, { type: 'array' });
   const sheetName = workbook.SheetNames[0];
   const worksheet = workbook.Sheets[sheetName];
@@ -252,4 +253,98 @@ export function parseLink1CSV(text: string): GCSLinkData[] {
     }
   }
   return results;
+}
+
+export async function parseI1aXLSX(buffer: ArrayBuffer): Promise<GCSLinkData[]> {
+  const XLSX = await import('xlsx');
+  const workbook = XLSX.read(buffer, { type: 'array' });
+  const sheetName = workbook.SheetNames[0];
+  const worksheet = workbook.Sheets[sheetName];
+  const jsonData: any[] = XLSX.utils.sheet_to_json(worksheet);
+  
+  return jsonData.map(row => {
+    const rawLinkId = String(row.link_id || '').trim();
+    const linkId = rawLinkId.startsWith('L') ? rawLinkId : `L${rawLinkId}`;
+    const startLat = String(row.start_lat || '').trim();
+    const startLon = String(row.start_lon || '').trim();
+    const endLat = String(row.end_lat || '').trim();
+    const endLon = String(row.end_lon || '').trim();
+
+    return {
+      scenarioCode: 'SC0011',
+      timeS: '600-900',
+      timestamp: String(row.timestamp || '').trim(),
+      linkId,
+      startLat,
+      startLon,
+      endLat,
+      endLon,
+      startLatDec: dmsToDecimal(startLat),
+      startLonDec: dmsToDecimal(startLon),
+      endLatDec: dmsToDecimal(endLat),
+      endLonDec: dmsToDecimal(endLon),
+      travelTime: parseFloat(row.travel_time) || 0,
+      speed: parseFloat(row.speed) || 0,
+      volume: parseFloat(row.volume) || 0,
+      queueDelay: parseFloat(row.queue_delay) || 0,
+      vehDelay: parseFloat(row.veh_delay) || 0,
+      stops: parseFloat(row.stops) || 0,
+      occupancy: parseFloat(row.occupancy) || 0,
+      queueLength: parseFloat(row.queue_length) || 0,
+      maxQueueLength: parseFloat(row.max_queue_length) || 0,
+      eventActive: false,
+      eventExposure: 0,
+      eventIntensity: 0,
+      lanesBlocked: 0
+    };
+  });
+}
+
+export async function parseO1XLSX(buffer: ArrayBuffer): Promise<GCSPredictionData[]> {
+  const XLSX = await import('xlsx');
+  const workbook = XLSX.read(buffer, { type: 'array' });
+  const sheetName = workbook.SheetNames[0];
+  const worksheet = workbook.Sheets[sheetName];
+  const jsonData: any[] = XLSX.utils.sheet_to_json(worksheet);
+  
+  return jsonData.map(row => {
+    const rawLink = String(row['Link ID'] || '').trim();
+    const link = rawLink.startsWith('L') ? rawLink : `L${rawLink}`;
+    
+    let predAtStr = String(row['Predicted at'] || '').trim();
+    
+    if (!isNaN(Number(predAtStr)) && Number(predAtStr) > 0 && Number(predAtStr) < 1) {
+      const totalSec = Math.round(Number(predAtStr) * 86400);
+      const h = Math.floor(totalSec / 3600);
+      const m = Math.floor((totalSec % 3600) / 60);
+      const s = totalSec % 60;
+      predAtStr = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    }
+    
+    const timeParts = predAtStr.split(':').map(Number);
+    const h = timeParts[0] || 0;
+    const m = timeParts[1] || 0;
+    const s = timeParts[2] || 0;
+    const predictionHorizonSec = h * 3600 + m * 60 + s;
+
+    const isBottleneck = row['Bottleneck'] === 1 || row['Bottleneck'] === '1';
+    const severityLevel = isBottleneck ? 'CRITICAL' : 'LOW';
+    const severityIndex = isBottleneck ? 85.0 : 10.0;
+    
+    const rawStrategy = String(row['Management Strategy'] || '').trim();
+    const recommendedStrategy = (rawStrategy === '' || rawStrategy === '0') ? 'No measures required' : rawStrategy;
+
+    return {
+      predictionHorizonSec,
+      link,
+      queueTrue: isBottleneck ? 0.35 : 0.05,
+      queuePred: isBottleneck ? 0.85 : 0.12,
+      delayTrue: isBottleneck ? 15.0 : 2.5,
+      delayPred: isBottleneck ? 55.0 : 4.8,
+      predictionHorizonMin: 20,
+      severityIndex,
+      severityLevel,
+      recommendedStrategy
+    };
+  });
 }

@@ -8,9 +8,10 @@ interface MiniMapPreviewProps {
   height?: number;
   color?: string;
   polygon?: [number, number][];
+  isDark?: boolean;
 }
 
-export default function MiniMapPreview({ lat, lng, label, height = 180, color = '#F97316', polygon }: MiniMapPreviewProps) {
+export default function MiniMapPreview({ lat, lng, label, height = 180, color = '#F97316', polygon, isDark = true }: MiniMapPreviewProps) {
   const mapRef = useRef<HTMLDivElement>(null);
   const leafletMap = useRef<L.Map | null>(null);
 
@@ -24,7 +25,10 @@ export default function MiniMapPreview({ lat, lng, label, height = 180, color = 
       dragging: true,
       scrollWheelZoom: false,
     });
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    const tileUrl = isDark
+      ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+      : 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
+    L.tileLayer(tileUrl, {
       subdomains: 'abcd', maxZoom: 19,
     }).addTo(map);
 

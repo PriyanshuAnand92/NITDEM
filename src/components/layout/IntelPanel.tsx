@@ -59,6 +59,7 @@ interface IntelPanelProps {
   setPlaybackSpeed?: (val: number) => void;
   selectedDate?: string;
   setSelectedDate?: (date: string) => void;
+  onClose?: () => void;
 }
 
 export default function IntelPanel({ 
@@ -98,6 +99,7 @@ export default function IntelPanel({
   setPlaybackSpeed = () => {},
   selectedDate = '',
   setSelectedDate = () => {},
+  onClose,
 }: IntelPanelProps) {
   const [activeTab, setActiveTab] = useState<'live' | 'forecast20'>('live');
   const [expandedIncident, setExpandedIncident] = useState<string | null>(null);
@@ -263,8 +265,7 @@ export default function IntelPanel({
   })();
 
   return (
-    <div className="h-full flex flex-col border-l border-white/[0.06] overflow-hidden bg-[#0F1117]"
-      style={{ width: 380 }}>
+    <div className="intel-panel h-full w-full lg:w-[380px] flex flex-col border-l lg:border-white/[0.06] border-transparent overflow-hidden bg-[#0F1117]">
       
       {/* Panel header */}
       <div className="border-b border-white/[0.06] shrink-0">
@@ -280,10 +281,21 @@ export default function IntelPanel({
           ) : (
             <span className="text-xs font-mono text-gray-400 tracking-wider uppercase font-bold">Intelligence</span>
           )}
-          <div className="flex items-center gap-1">
-            <motion.div animate={{ opacity: [1, 0.3, 1] }} transition={{ duration: 1.5, repeat: Infinity }}
-              className="w-1.5 h-1.5 rounded-full bg-orange-400" />
-            <span className="text-[10px] font-mono text-orange-400 font-bold">LIVE</span>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1">
+              <motion.div animate={{ opacity: [1, 0.3, 1] }} transition={{ duration: 1.5, repeat: Infinity }}
+                className="w-1.5 h-1.5 rounded-full bg-orange-400" />
+              <span className="text-[10px] font-mono text-orange-400 font-bold">LIVE</span>
+            </div>
+            {onClose && (
+              <button
+                onClick={onClose}
+                className="text-gray-500 hover:text-white transition-colors p-1 text-sm leading-none"
+                aria-label="Close intelligence panel"
+              >
+                ✕
+              </button>
+            )}
           </div>
         </div>
         {/* Tabs */}
@@ -323,6 +335,16 @@ export default function IntelPanel({
             setWhatIfRetimingSeconds={setWhatIfRetimingSeconds}
             isRetimingApplied={isRetimingApplied}
             setIsRetimingApplied={setIsRetimingApplied}
+            uniqueTimestamps={uniqueTimestamps}
+            selectedDate={selectedDate}
+            setSelectedDate={setSelectedDate}
+            playbackIndex={playbackIndex}
+            setPlaybackIndex={setPlaybackIndex}
+            isPlaybackPlaying={isPlaybackPlaying}
+            setIsPlaybackPlaying={setIsPlaybackPlaying}
+            playbackSpeed={playbackSpeed}
+            setPlaybackSpeed={setPlaybackSpeed}
+            onTimeChange={onTimeChange}
           />
         ) : (
         /* Selected node info */
@@ -482,7 +504,7 @@ export default function IntelPanel({
 
                 {/* Embedded Temporal Control Center */}
                 {uniqueTimestamps.length > 0 && (
-                  <div className="bg-[#0F1117]/90 border border-white/[0.08] rounded-xl p-3 space-y-2.5">
+                  <div className="timeline-seeker-card bg-[#0F1117]/90 border border-white/[0.08] rounded-xl p-3 space-y-2.5">
                     <div className="flex items-center justify-between">
                       <span className="text-[10px] font-mono text-gray-400 tracking-wider uppercase font-bold">Timeline Seeker</span>
                       <div className="text-xs font-mono font-extrabold text-orange-400 bg-orange-400/10 border border-orange-400/20 px-2 py-0.5 rounded flex items-center gap-1.5">
@@ -989,6 +1011,16 @@ interface Forecast20PanelProps {
   setWhatIfRetimingSeconds: (val: number) => void;
   isRetimingApplied: boolean;
   setIsRetimingApplied: (val: boolean) => void;
+  uniqueTimestamps: string[];
+  selectedDate: string;
+  setSelectedDate: (val: string) => void;
+  playbackIndex: number;
+  setPlaybackIndex: (val: number) => void;
+  isPlaybackPlaying: boolean;
+  setIsPlaybackPlaying: (val: boolean) => void;
+  playbackSpeed: number;
+  setPlaybackSpeed: (val: number) => void;
+  onTimeChange: (val: string) => void;
 }
 
 function Forecast20Panel({ 
@@ -1008,10 +1040,52 @@ function Forecast20Panel({
   whatIfRetimingSeconds,
   setWhatIfRetimingSeconds,
   isRetimingApplied,
-  setIsRetimingApplied
+  setIsRetimingApplied,
+  uniqueTimestamps,
+  selectedDate,
+  setSelectedDate,
+  playbackIndex,
+  setPlaybackIndex,
+  isPlaybackPlaying,
+  setIsPlaybackPlaying,
+  playbackSpeed,
+  setPlaybackSpeed,
+  onTimeChange
 }: Forecast20PanelProps) {
   const isLinkActive = selectedLink !== null;
   const isNodeActive = selectedNode !== null;
+
+  const handleTimeSelectorChange = (newTime: string) => {
+    onTimeChange(newTime);
+    if (uniqueTimestamps.length === 0) return;
+    const toSeconds = (t: string) => {
+      const parts = t.split(':').map(Number);
+      return (parts[0] || 0) * 3600 + (parts[1] || 0) * 60 + (parts[2] || 0);
+    };
+    const targetSec = toSeconds(newTime);
+    let closestIdx = 0;
+    let minDiff = Infinity;
+    for (let i = 0; i < uniqueTimestamps.length; i++) {
+      const diff = Math.abs(toSeconds(uniqueTimestamps[i]) - targetSec);
+      if (diff < minDiff) {
+        minDiff = diff;
+        closestIdx = i;
+      }
+    }
+    setPlaybackIndex(closestIdx);
+  };
+
+  const nodeLinkConnections: Record<string, string[]> = {
+    mavoor: ['L11', 'L23', 'L12', 'L25', 'L14', 'L26'],
+    bus_stand: ['L11', 'L23', 'L13', 'L19', 'L6', 'L17'],
+    arayidathupalam: ['L13', 'L19', 'L1', 'L18'],
+    mananchira: ['L14', 'L26', 'L8', 'L22', 'L5', 'L15'],
+    stadium: ['L6', 'L17', 'L3', 'L16', 'L4', 'L10', 'L5', 'L15'],
+    midtown: ['L1', 'L18', 'L3', 'L16', 'L2', 'L24'],
+    palayam: ['L8', 'L22', 'L9', 'L21'],
+    poonthanam: ['L9', 'L21', 'L4', 'L10', 'L7', 'L20'],
+    east_bypass: ['L2', 'L24', 'L7', 'L20'],
+  };
 
   const connectionToLinks: Record<string, [string, string]> = {
     'mavoor-bus_stand': ['L23', 'L11'],
@@ -1066,388 +1140,354 @@ function Forecast20Panel({
     L19: 'Mavoor Road Middle (Bus Stand → Arayidathupalam)',
   };
 
-  const severityColor = (lvl: string) => {
-    switch (lvl.toUpperCase()) {
-      case 'LOW': return '#22C55E';
-      case 'MODERATE': return '#EAB308';
-      case 'HIGH': return '#F97316';
-      case 'CRITICAL': return '#EF4444';
-      default: return '#9CA3AF';
-    }
-  };
-
   const elapsedSec = (() => {
     const parts = selectedTime.split(':').map(Number);
     const h = parts[0] || 0;
     const m = parts[1] || 0;
     const s = parts[2] || 0;
-    return (h * 3600 + m * 60 + s) % 840;
+    return (h * 3600 + m * 60 + s);
   })();
 
-  if (isNodeActive) {
-    const nodesToRender = selectedNode ? [selectedNode] : TRAFFIC_NODES;
-    return (
-      <div className="space-y-2">
-        <div className="bg-orange-500/10 border border-orange-500/20 rounded-lg p-2.5 flex items-center gap-2">
-          <Sparkles className="w-3.5 h-3.5 text-orange-400 shrink-0" />
-          <div>
-            <div className="text-[10px] font-mono text-orange-400 tracking-wider">20-MIN PREDICTION</div>
-            <div className="text-[9px] text-gray-400">{selectedNode ? `Forecast for ${selectedNode.name}` : 'Forecast across all monitored junctions'}</div>
-          </div>
-        </div>
-        {nodesToRender.map(node => {
-          const pred = getPrediction(node, '20min');
-          const status = congestionToStatus(pred.congestion);
-          const color = statusColor(status);
-          return (
-            <div key={node.id} className="bg-white/[0.03] border border-white/[0.05] rounded-lg p-2.5 space-y-1.5">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 min-w-0">
-                  <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: color }} />
-                  <span className="text-[11px] font-semibold text-white truncate">{node.name}</span>
-                </div>
-                <span className="text-[9px] font-mono uppercase shrink-0" style={{ color }}>{statusLabel(status)}</span>
-              </div>
-              <div className="grid grid-cols-3 gap-1.5">
-                <div className="bg-white/[0.03] rounded p-1.5">
-                  <div className="text-[8px] text-gray-500 font-mono">Density</div>
-                  <div className="text-[11px] font-bold font-mono" style={{ color }}>{pred.density}%</div>
-                </div>
-                <div className="bg-white/[0.03] rounded p-1.5">
-                  <div className="text-[8px] text-gray-500 font-mono">Vehicles</div>
-                  <div className="text-[11px] font-bold font-mono text-orange-400">{pred.vehicleCount.toLocaleString()}</div>
-                </div>
-                <div className="bg-white/[0.03] rounded p-1.5">
-                  <div className="text-[8px] text-gray-500 font-mono">Speed</div>
-                  <div className="text-[11px] font-bold font-mono text-blue-400">{pred.avgSpeed}<span className="text-[8px] text-gray-500"> km/h</span></div>
-                </div>
-              </div>
-              <div className="flex items-center justify-between text-[9px] font-mono">
-                <span className="text-gray-500">Confidence</span>
-                <span className="text-purple-400">{pred.confidence}%</span>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    );
-  }
-
-  if (isLinkActive) {
-    const mappedIds = connectionToLinks[selectedLink] || [];
-    const linkForecasts = mappedIds.map(linkId => {
-      const preds = gcsPredictions.filter(p => p.link === linkId);
-      if (preds.length === 0) return null;
-      
-      const baseForecast = preds.find(p => p.predictionHorizonSec === elapsedSec) ||
-             preds.reduce((max, p) => p.predictionHorizonSec > max.predictionHorizonSec ? p : max, preds[0]);
-
-      if (isWhatIfActive) {
-        // Calculate simulated queue length
-        const lanesAdjustment = whatIfLanesBlocked * 0.22;
-        const intensityAdjustment = whatIfEventIntensity * 0.0025;
-        const retimingAdjustment = isRetimingApplied ? whatIfRetimingSeconds * 0.015 : 0;
-        const queuePred = Math.min(1.0, Math.max(0.0, baseForecast.queuePred + lanesAdjustment + intensityAdjustment - retimingAdjustment));
-        
-        // Calculate simulated delay seconds
-        const delayAdjustmentLanes = whatIfLanesBlocked * 25;
-        const delayAdjustmentIntensity = whatIfEventIntensity * 0.35;
-        const delayAdjustmentRetiming = isRetimingApplied ? whatIfRetimingSeconds * 1.2 : 0;
-        const delayPred = Math.max(0.0, baseForecast.delayPred + delayAdjustmentLanes + delayAdjustmentIntensity - delayAdjustmentRetiming);
-        
-        // Calculate simulated severity index
-        const severityIndex = Math.min(100, Math.max(0, baseForecast.severityIndex + whatIfLanesBlocked * 20 + whatIfEventIntensity * 0.25 - (isRetimingApplied ? whatIfRetimingSeconds * 1.0 : 0)));
-        
-        let severityLevel: 'LOW' | 'MODERATE' | 'HIGH' | 'CRITICAL' = 'LOW';
-        if (severityIndex >= 75) severityLevel = 'CRITICAL';
-        else if (severityIndex >= 50) severityLevel = 'HIGH';
-        else if (severityIndex >= 25) severityLevel = 'MODERATE';
-        
-        const recommendedStrategy = 
-          severityLevel === 'LOW' ? "Monitor Traffic Conditions" :
-          severityLevel === 'MODERATE' ? "Activate VMS + Traveler Information" :
-          severityLevel === 'HIGH' ? "Diversion Route + Signal Retiming" :
-                                     "Full Detour + Emergency Response";
-
-        return {
-          ...baseForecast,
-          queuePred,
-          delayPred,
-          severityIndex,
-          severityLevel,
-          recommendedStrategy
-        };
-      }
-      return baseForecast;
-    }).filter(Boolean) as GCSPredictionData[];
-
-    return (
-      <div className="space-y-3">
-        <div className="bg-orange-500/10 border border-orange-500/20 rounded-lg p-2.5 flex items-center gap-2">
-          <Brain className="w-3.5 h-3.5 text-orange-400 shrink-0" />
-          <div>
-            <div className="text-[10px] font-mono text-orange-400 tracking-wider">STGNN MODEL FORECAST</div>
-            <div className="text-[9px] text-gray-400">Deep Spatial-Temporal predictions</div>
-          </div>
-        </div>
-
-        {/* What-If Simulation Sandbox Panel */}
-        <div className="bg-[#0F1117]/80 backdrop-blur-md border border-white/[0.06] rounded-xl p-3 space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Activity className="w-4 h-4 text-orange-400" />
-              <div>
-                <h4 className="text-xs font-bold text-white leading-none">What-If Sandbox</h4>
-                <p className="text-[9px] text-gray-500 font-sans mt-0.5">Simulate incident conditions</p>
-              </div>
-            </div>
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input 
-                type="checkbox" 
-                checked={isWhatIfActive} 
-                onChange={(e) => {
-                  setIsWhatIfActive(e.target.checked);
-                  if (!e.target.checked) {
-                    setIsRetimingApplied(false);
-                  }
-                }}
-                className="sr-only peer" 
-              />
-              <div className="w-8 h-4 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-gray-300 after:border-gray-300 after:border after:rounded-full after:h-3 after:w-4 after:transition-all peer-checked:bg-orange-500"></div>
-            </label>
-          </div>
-
-          {isWhatIfActive && (
-            <div className="space-y-3 pt-2 border-t border-white/[0.04]">
-              {/* Lanes Blocked Slider */}
-              <div className="space-y-1">
-                <div className="flex justify-between text-[9px] font-mono text-gray-400">
-                  <span>Simulated Lanes Blocked</span>
-                  <span className="text-orange-400 font-bold font-mono">{whatIfLanesBlocked} / 3 Lanes</span>
-                </div>
-                <input 
-                  type="range" 
-                  min="0" 
-                  max="3" 
-                  value={whatIfLanesBlocked}
-                  onChange={(e) => {
-                    setWhatIfLanesBlocked(parseInt(e.target.value, 10));
-                  }}
-                  className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-orange-500"
-                />
-              </div>
-
-              {/* Event Intensity Slider */}
-              <div className="space-y-1">
-                <div className="flex justify-between text-[9px] font-mono text-gray-400">
-                  <span>Simulated Event Intensity</span>
-                  <span className="text-orange-400 font-bold font-mono">{whatIfEventIntensity}%</span>
-                </div>
-                <input 
-                  type="range" 
-                  min="0" 
-                  max="100" 
-                  value={whatIfEventIntensity}
-                  onChange={(e) => {
-                    setWhatIfEventIntensity(parseInt(e.target.value, 10));
-                  }}
-                  className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-orange-500"
-                />
-              </div>
-            </div>
-          )}
-        </div>
-
-        {linkForecasts.length === 0 ? (
-          <div className="bg-white/[0.03] border border-white/[0.05] rounded-lg p-3 text-center text-xs text-gray-400">
-            No forecast data available for selected link.
-          </div>
-        ) : (
-          linkForecasts.map(f => {
-            const desc = linkDescriptions[f.link] || `Link ${f.link}`;
-            const sevColor = severityColor(f.severityLevel);
-            const isQueueIncreasing = f.queuePred > f.queueTrue;
-            const isDelayIncreasing = f.delayPred > f.delayTrue;
-            const horizonMin = (f.predictionHorizonSec / 60).toFixed(1);
-            const needsRetiming = f.severityLevel === 'HIGH' || f.severityLevel === 'CRITICAL';
-
-            return (
-              <div key={f.link} className="bg-white/[0.03] border border-white/[0.05] rounded-lg p-3 space-y-2">
-                <div className="flex items-center justify-between gap-1">
-                  <div className="text-xs font-bold text-white leading-snug flex items-center gap-1.5 min-w-0">
-                    <span className="text-[8.5px] font-mono bg-white/[0.06] border border-white/[0.1] px-1.5 py-0.5 rounded text-orange-400 font-extrabold shrink-0 uppercase tracking-wider">
-                      {f.link}
-                    </span>
-                    <span className="truncate" title={desc}>{desc}</span>
-                  </div>
-                  <span className="text-[9px] font-mono px-1.5 py-0.5 rounded font-bold uppercase shrink-0"
-                    style={{ color: sevColor, backgroundColor: `${sevColor}15`, border: `1px solid ${sevColor}30` }}>
-                    {f.severityLevel}
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  {/* Queue Prediction */}
-                  <div className="bg-white/[0.02] border border-white/[0.04] p-2 rounded">
-                    <div className="text-[9px] text-gray-400 uppercase font-mono mb-1 font-bold">Queue Length</div>
-                    <div className="flex items-baseline gap-1.5 justify-between">
-                      <span className="text-gray-400 font-mono text-[9px]">T: {f.queueTrue.toFixed(3)}</span>
-                      <span className="font-mono font-bold text-white">P: {f.queuePred.toFixed(3)}</span>
-                    </div>
-                    <div className="text-[9px] mt-1 text-right flex items-center justify-end gap-1">
-                      {isQueueIncreasing ? (
-                        <span className="text-red-400 font-semibold font-sans">▲ Increasing</span>
-                      ) : (
-                        <span className="text-green-400 font-semibold font-sans">▼ Decreasing</span>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Delay Prediction */}
-                  <div className="bg-white/[0.02] border border-white/[0.04] p-2 rounded">
-                    <div className="text-[9px] text-gray-400 uppercase font-mono mb-1 font-bold">Veh Delay</div>
-                    <div className="flex items-baseline gap-1.5 justify-between">
-                      <span className="text-gray-400 font-mono text-[9px]">T: {f.delayTrue.toFixed(2)}s</span>
-                      <span className="font-mono font-bold text-white">P: {f.delayPred.toFixed(2)}s</span>
-                    </div>
-                    <div className="text-[9px] mt-1 text-right flex items-center justify-end gap-1">
-                      {isDelayIncreasing ? (
-                        <span className="text-red-400 font-semibold font-sans">▲ Increasing</span>
-                      ) : (
-                        <span className="text-green-400 font-semibold font-sans">▼ Decreasing</span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Horizon & severity index */}
-                <div className="flex justify-between items-center text-[10px] font-mono text-gray-400 border-t border-white/[0.04] pt-2">
-                  <span>Horizon: {horizonMin} min</span>
-                  <span>Severity Index: <span className="text-white font-bold">{f.severityIndex.toFixed(1)}</span></span>
-                </div>
-
-                {/* Action Strategy */}
-                <div className="bg-orange-500/10 border border-orange-500/20 text-orange-400 p-2 rounded flex items-start gap-2">
-                  <Zap className="w-3.5 h-3.5 text-orange-400 shrink-0 mt-0.5" />
-                  <div>
-                    <div className="text-[9px] font-mono font-bold uppercase tracking-wider">STGNN RECOMMENDED STRATEGY</div>
-                    <div className="text-xs text-gray-200 mt-0.5 leading-relaxed font-sans">{f.recommendedStrategy}</div>
-                  </div>
-                </div>
-
-                {/* Closed-Loop Traffic Signal Retiming Agent Recommendations */}
-                {needsRetiming && (
-                  <div className="mt-2 bg-green-500/10 border border-green-500/20 text-green-400 p-2.5 rounded-lg space-y-2">
-                    <div className="flex items-center gap-1.5">
-                      <Zap className="w-3.5 h-3.5 text-green-400 animate-pulse" />
-                      <div className="text-[9px] font-mono font-bold uppercase tracking-wider">AI SIGNAL RETIMING AGENT</div>
-                    </div>
-                    <p className="text-[10px] text-gray-300 leading-normal font-sans">
-                      Recommendation: Increase green phase of link <span className="font-bold text-white font-mono">{f.link}</span> by <span className="font-bold text-white font-mono">{whatIfRetimingSeconds}s</span> to alleviate queue delay.
-                    </p>
-                    
-                    {isRetimingApplied ? (
-                      <div className="flex items-center justify-between pt-1">
-                        <span className="text-[9px] font-mono text-green-400 flex items-center gap-1 font-bold">
-                          ✓ Plan Applied (+{whatIfRetimingSeconds}s)
-                        </span>
-                        <button 
-                          onClick={() => setIsRetimingApplied(false)}
-                          className="text-[9px] font-mono font-bold text-red-400 bg-red-500/15 border border-red-500/30 px-2.5 py-0.5 rounded hover:bg-red-500/25 transition-all"
-                        >
-                          Reset Timing
-                        </button>
-                      </div>
-                    ) : (
-                      <button 
-                        onClick={() => setIsRetimingApplied(true)}
-                        className="w-full text-center text-[10px] font-mono font-bold text-green-950 bg-green-400 border border-green-500/30 py-1.5 rounded hover:bg-green-300 transition-all flex items-center justify-center gap-1"
-                      >
-                        <CheckCircle2 className="w-3.5 h-3.5 text-green-950" /> Apply Retiming Plan
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })
-        )}
-      </div>
-    );
-  }
-
-  // Otherwise: neither node nor link selected - list all 8 links
-  const allStgnnLinks = ['L19', 'L13', 'L6', 'L17', 'L18', 'L1', 'L16', 'L3'];
-  const allLinkForecasts = allStgnnLinks.map(linkId => {
-    const preds = gcsPredictions.filter(p => p.link === linkId);
+  const findForecast = (preds: GCSPredictionData[], targetSec: number): GCSPredictionData | null => {
     if (preds.length === 0) return null;
-    const f = preds.find(p => p.predictionHorizonSec === elapsedSec) ||
-              preds.reduce((max, p) => p.predictionHorizonSec > max.predictionHorizonSec ? p : max, preds[0]);
-    return {
-      linkId,
-      forecast: f,
-      description: linkDescriptions[linkId] || `Link ${linkId}`,
-      connectionKey: linkToConnectionMap[linkId]
-    };
-  }).filter((x): x is { linkId: string; forecast: GCSPredictionData; description: string; connectionKey: string; } => x !== null);
+    const bucketStartSec = Math.floor(targetSec / 1200) * 1200;
+    const exactMatch = preds.find(p => p.predictionHorizonSec === bucketStartSec);
+    if (exactMatch) return exactMatch;
+    
+    // Fallback: closest match
+    let baseForecast = preds[0];
+    let minDiff = Infinity;
+    for (const p of preds) {
+      let diff = Math.abs(p.predictionHorizonSec - bucketStartSec);
+      if (diff > 43200) {
+        diff = 86400 - diff;
+      }
+      if (diff < minDiff) {
+        minDiff = diff;
+        baseForecast = p;
+      }
+    }
+    return baseForecast;
+  };
+
+  const allStgnnLinks = ['L19', 'L13', 'L6', 'L17', 'L18', 'L1', 'L16', 'L3'];
+
+  const renderLinkForecastCard = (linkId: string, forecast: GCSPredictionData | null, onClick?: () => void) => {
+    const desc = linkDescriptions[linkId] || `Link ${linkId}`;
+    const isBottleneck = forecast ? forecast.severityLevel === 'CRITICAL' : false;
+    const rawStrategy = forecast ? forecast.recommendedStrategy : '';
+    const strategy = (rawStrategy === '' || rawStrategy === '0' || !rawStrategy) ? 'No measures required' : rawStrategy;
+    
+    return (
+      <div 
+        key={linkId} 
+        onClick={onClick}
+        className={`bg-white/[0.03] border border-white/[0.05] rounded-lg p-3 space-y-2 transition-all ${
+          onClick ? 'cursor-pointer hover:bg-white/[0.06] hover:border-white/[0.1]' : ''
+        }`}
+      >
+        <div className="flex items-center justify-between gap-1">
+          <div className="text-xs font-bold text-white leading-snug flex items-center gap-1.5 min-w-0">
+            <span className="text-[8.5px] font-mono bg-white/[0.06] border border-white/[0.1] px-1.5 py-0.5 rounded text-orange-400 font-extrabold shrink-0 uppercase tracking-wider font-mono">
+              {linkId}
+            </span>
+            <span className="truncate text-gray-200 font-sans" title={desc}>{desc}</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="text-[9px] font-mono text-gray-500 uppercase">Bottleneck:</span>
+            <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded font-bold uppercase shrink-0 border ${
+              isBottleneck 
+                ? 'bg-red-500/10 text-red-400 border-red-500/30' 
+                : 'bg-green-500/10 text-green-400 border-green-500/30'
+            }`}>
+              {isBottleneck ? 'YES' : 'NO'}
+            </span>
+          </div>
+        </div>
+        
+        <div className={`p-2 rounded flex items-start gap-2 ${
+          isBottleneck ? 'bg-orange-500/10 border border-orange-500/20 text-orange-400' : 'bg-white/[0.02] border border-white/[0.04] text-gray-400'
+        }`}>
+          <Zap className={`w-3.5 h-3.5 shrink-0 mt-0.5 ${isBottleneck ? 'text-orange-400 animate-pulse' : 'text-gray-500'}`} />
+          <div>
+            <div className="text-[9px] font-mono font-bold uppercase tracking-wider">Management Strategy</div>
+            <div className="text-xs text-gray-200 mt-0.5 leading-relaxed font-sans">{strategy}</div>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="space-y-3">
-      <div className="bg-orange-500/10 border border-orange-500/20 rounded-lg p-2.5 flex items-center gap-2">
-        <Brain className="w-3.5 h-3.5 text-orange-400 shrink-0" />
-        <div>
-          <div className="text-[10px] font-mono text-orange-400 tracking-wider">STGNN NETWORK FORECAST</div>
-          <div className="text-[9px] text-gray-400 font-bold">Predictions for 8 primary links</div>
-        </div>
-      </div>
-
-      <div className="space-y-2 max-h-[480px] overflow-y-auto pr-1">
-        {allLinkForecasts.length === 0 ? (
-          <div className="bg-white/[0.03] border border-white/[0.05] rounded-lg p-4 text-center text-xs text-gray-500">
-            No STGNN predictions loaded yet.
+      {/* Timeline Seeker card */}
+      {uniqueTimestamps.length > 0 && (
+        <div className="timeline-seeker-card bg-[#0F1117]/90 border border-white/[0.08] rounded-xl p-3 space-y-2.5">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-mono text-gray-400 tracking-wider uppercase font-bold">Timeline Seeker</span>
+            <div className="text-xs font-mono font-extrabold text-orange-400 bg-orange-400/10 border border-orange-400/20 px-2 py-0.5 rounded flex items-center gap-1.5">
+              <Clock className="w-3.5 h-3.5 animate-pulse" />
+              {selectedTime}
+            </div>
           </div>
-        ) : (
-          allLinkForecasts.map(({ linkId, forecast, description, connectionKey }) => {
-            const sevColor = severityColor(forecast.severityLevel);
-            return (
-              <div
-                key={linkId}
-                onClick={() => {
-                  if (onSelectLink && connectionKey) {
-                    onSelectLink(connectionKey);
-                  }
-                }}
-                className={`bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.05] rounded-lg p-2.5 transition-all text-left space-y-1.5 ${
-                  connectionKey ? 'cursor-pointer' : ''
-                }`}
-              >
-                <div className="flex items-center justify-between gap-1">
-                  <div className="text-[11px] font-bold text-white truncate flex items-center gap-1.5 min-w-0">
-                    <span className="text-[8px] font-mono bg-white/[0.06] border border-white/[0.1] px-1 py-0.5 rounded text-orange-400 font-extrabold shrink-0 uppercase tracking-wider">
-                      {linkId}
-                    </span>
-                    <span className="truncate" title={description}>{description}</span>
-                  </div>
-                  <span className="text-[8px] font-mono px-1.5 py-0.5 rounded font-bold uppercase shrink-0"
-                    style={{ color: sevColor, backgroundColor: `${sevColor}15`, border: `1px solid ${sevColor}20` }}>
-                    {forecast.severityLevel}
-                  </span>
-                </div>
-                
-                <div className="grid grid-cols-2 gap-2 text-[10px] text-gray-400 font-mono">
-                  <div>Q Pred: <span className="text-white font-bold">{forecast.queuePred.toFixed(3)}</span></div>
-                  <div>Delay Pred: <span className="text-white font-bold">{forecast.delayPred.toFixed(1)}s</span></div>
-                </div>
 
-                <div className="text-[9px] text-orange-400/90 truncate leading-snug font-sans flex items-center gap-1">
-                  <Zap className="w-2.5 h-2.5 text-orange-400 shrink-0" />
-                  <span>{forecast.recommendedStrategy}</span>
+          {/* Time & Date Inputs Row */}
+          <div className="flex items-center justify-between gap-1.5 bg-white/[0.02] border border-white/[0.04] p-1.5 rounded-lg">
+            {/* Date Picker */}
+            <div className="flex flex-col gap-0.5">
+              <label className="text-[7.5px] font-mono text-gray-500 uppercase font-bold">Date</label>
+              <input
+                type="date"
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+                className="bg-white/[0.04] border border-white/[0.08] rounded px-1.5 py-0.5 text-[10px] font-mono text-white focus:outline-none focus:border-orange-500/50 w-24 shrink-0 font-bold"
+              />
+            </div>
+
+            {/* Time Selectors */}
+            <div className="flex flex-col gap-0.5 flex-1 items-end">
+              <label className="text-[7.5px] font-mono text-gray-500 uppercase font-bold pr-1">Target Time (HH:MM:SS)</label>
+              <div className="flex items-center gap-1">
+                {/* Hour select */}
+                <select
+                  value={selectedTime.split(':')[0] || '00'}
+                  onChange={(e) => {
+                    const [_, m, s] = selectedTime.split(':');
+                    handleTimeSelectorChange(`${e.target.value}:${m || '00'}:${s || '00'}`);
+                  }}
+                  className="bg-white/[0.04] border border-white/[0.08] rounded px-1 py-0.5 text-[10px] font-mono text-white focus:outline-none focus:border-orange-500/50 w-[38px] text-center font-bold"
+                >
+                  {Array.from({ length: 24 }, (_, i) => {
+                    const val = String(i).padStart(2, '0');
+                    return <option key={val} value={val} className="bg-[#0F1117] text-white">{val}</option>;
+                  })}
+                </select>
+
+                <span className="text-[9px] text-gray-500 font-mono">:</span>
+
+                {/* Minute select */}
+                <select
+                  value={selectedTime.split(':')[1] || '00'}
+                  onChange={(e) => {
+                    const [h, _, s] = selectedTime.split(':');
+                    handleTimeSelectorChange(`${h || '00'}:${e.target.value}:${s || '00'}`);
+                  }}
+                  className="bg-white/[0.04] border border-white/[0.08] rounded px-1 py-0.5 text-[10px] font-mono text-white focus:outline-none focus:border-orange-500/50 w-[38px] text-center font-bold"
+                >
+                  {Array.from({ length: 60 }, (_, i) => {
+                    const val = String(i).padStart(2, '0');
+                    return <option key={val} value={val} className="bg-[#0F1117] text-white">{val}</option>;
+                  })}
+                </select>
+
+                <span className="text-[9px] text-gray-500 font-mono">:</span>
+
+                {/* Second select */}
+                <select
+                  value={selectedTime.split(':')[2] || '00'}
+                  onChange={(e) => {
+                    const [h, m, _] = selectedTime.split(':');
+                    handleTimeSelectorChange(`${h || '00'}:${m || '00'}:${e.target.value}`);
+                  }}
+                  className="bg-white/[0.04] border border-white/[0.08] rounded px-1 py-0.5 text-[10px] font-mono text-white focus:outline-none focus:border-orange-500/50 w-[38px] text-center font-bold"
+                >
+                  {Array.from({ length: 12 }, (_, i) => {
+                    const val = String(i * 5).padStart(2, '0');
+                    return <option key={val} value={val} className="bg-[#0F1117] text-white">{val}</option>;
+                  })}
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* Playback Controls Row */}
+          <div className="flex items-center justify-between gap-3">
+            {/* Step back */}
+            <button
+              onClick={() => {
+                const nextIdx = (playbackIndex - 1 + uniqueTimestamps.length) % uniqueTimestamps.length;
+                setPlaybackIndex(nextIdx);
+              }}
+              title="Step Back"
+              className="w-8 h-8 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] flex items-center justify-center text-[10px] text-gray-300 hover:text-white"
+            >
+              ◀
+            </button>
+
+            {/* Play/Pause */}
+            <button
+              onClick={() => setIsPlaybackPlaying(!isPlaybackPlaying)}
+              title={isPlaybackPlaying ? "Pause Playback" : "Start Playback"}
+              className={`flex-1 h-8 rounded-lg border flex items-center justify-center font-bold text-[10px] gap-1 ${
+                isPlaybackPlaying 
+                  ? 'bg-orange-500/10 text-orange-400 border-orange-500/30 hover:bg-orange-500/20' 
+                  : 'bg-green-500/10 text-green-400 border-green-500/30 hover:bg-green-500/20'
+              }`}
+            >
+              {isPlaybackPlaying ? 'PAUSE' : 'PLAY'}
+            </button>
+
+            {/* Step forward */}
+            <button
+              onClick={() => {
+                const nextIdx = (playbackIndex + 1) % uniqueTimestamps.length;
+                setPlaybackIndex(nextIdx);
+              }}
+              title="Step Forward"
+              className="w-8 h-8 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] flex items-center justify-center text-[10px] text-gray-300 hover:text-white"
+            >
+              ▶
+            </button>
+          </div>
+
+          {/* Range Scrubber */}
+          <div className="space-y-1">
+            <input
+              type="range"
+              min="0"
+              max={uniqueTimestamps.length - 1}
+              value={playbackIndex}
+              onChange={(e) => {
+                const idx = parseInt(e.target.value, 10);
+                setPlaybackIndex(idx);
+                if (uniqueTimestamps[idx]) {
+                  onTimeChange(uniqueTimestamps[idx]);
+                }
+              }}
+              className="w-full h-1 bg-white/10 rounded-lg appearance-none cursor-pointer accent-orange-500"
+            />
+            <div className="flex justify-between text-[8px] font-mono text-gray-500">
+              <span>START (00:00)</span>
+              <span>Index: {playbackIndex + 1} / {uniqueTimestamps.length}</span>
+              <span>END (24:00)</span>
+            </div>
+          </div>
+
+          {/* Playback speed selector */}
+          <div className="flex items-center justify-between border-t border-white/[0.04] pt-2">
+            <span className="text-[9px] font-mono text-gray-500 uppercase">Playback Speed</span>
+            <div className="flex gap-1">
+              {[1, 5, 15, 30].map((speed) => (
+                <button
+                  key={speed}
+                  onClick={() => setPlaybackSpeed(speed)}
+                  className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-bold transition-all ${
+                    playbackSpeed === speed
+                      ? 'bg-orange-500 text-[#0F1117]'
+                      : 'bg-white/[0.03] text-gray-400 hover:text-white border border-white/[0.04]'
+                  }`}
+                >
+                  {speed}x
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Main content area */}
+      {(() => {
+        if (isNodeActive) {
+          const nodeLinks = nodeLinkConnections[selectedNode.id] || [];
+          const activeNodeLinks = nodeLinks.filter(l => allStgnnLinks.includes(l));
+
+          return (
+            <div className="space-y-2">
+              <div className="bg-orange-500/10 border border-orange-500/20 rounded-lg p-2.5 flex items-center gap-2">
+                <Sparkles className="w-3.5 h-3.5 text-orange-400 shrink-0" />
+                <div>
+                  <div className="text-[10px] font-mono text-orange-400 tracking-wider font-bold">20-MIN JUNCTION FORECAST</div>
+                  <div className="text-[9px] text-gray-400 font-sans">Forecast for links connected to {selectedNode.name}</div>
                 </div>
               </div>
-            );
-          })
-        )}
-      </div>
+
+              {activeNodeLinks.length === 0 ? (
+                <div className="bg-white/[0.03] border border-white/[0.05] rounded-lg p-3 text-center text-xs text-gray-500 font-mono">
+                  No STGNN prediction links connect to this junction.
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {activeNodeLinks.map(linkId => {
+                    const preds = gcsPredictions.filter(p => p.link === linkId);
+                    const forecast = findForecast(preds, elapsedSec);
+                    return renderLinkForecastCard(linkId, forecast);
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        }
+
+        if (isLinkActive) {
+          const mappedIds = connectionToLinks[selectedLink] || [];
+          const activeLinkForecasts = mappedIds.filter(l => allStgnnLinks.includes(l));
+
+          return (
+            <div className="space-y-2">
+              <div className="bg-orange-500/10 border border-orange-500/20 rounded-lg p-2.5 flex items-center gap-2">
+                <Brain className="w-3.5 h-3.5 text-orange-400 shrink-0" />
+                <div>
+                  <div className="text-[10px] font-mono text-orange-400 tracking-wider font-bold">20-MIN CORRIDOR FORECAST</div>
+                  <div className="text-[9px] text-gray-400 font-sans">Forecast for active links on selected corridor</div>
+                </div>
+              </div>
+
+              {activeLinkForecasts.length === 0 ? (
+                <div className="bg-white/[0.03] border border-white/[0.05] rounded-lg p-3 text-center text-xs text-gray-400 font-mono">
+                  No forecast data available for selected corridor links.
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {activeLinkForecasts.map(linkId => {
+                    const preds = gcsPredictions.filter(p => p.link === linkId);
+                    const forecast = findForecast(preds, elapsedSec);
+                    return renderLinkForecastCard(linkId, forecast);
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        }
+
+        // Overview: no selection
+        const allLinkForecasts = allStgnnLinks.map(linkId => {
+          const preds = gcsPredictions.filter(p => p.link === linkId);
+          const f = findForecast(preds, elapsedSec);
+          return {
+            linkId,
+            forecast: f,
+            connectionKey: linkToConnectionMap[linkId]
+          };
+        });
+
+        return (
+          <div className="space-y-2">
+            <div className="bg-orange-500/10 border border-orange-500/20 rounded-lg p-2.5 flex items-center gap-2">
+              <Brain className="w-3.5 h-3.5 text-orange-400 shrink-0" />
+              <div>
+                <div className="text-[10px] font-mono text-orange-400 tracking-wider font-bold">20-MIN NETWORK FORECAST</div>
+                <div className="text-[9px] text-gray-400 font-sans font-bold">Predictions for 8 primary links</div>
+              </div>
+            </div>
+
+            <div className="space-y-2 max-h-[480px] overflow-y-auto pr-1">
+              {allLinkForecasts.length === 0 ? (
+                <div className="bg-white/[0.03] border border-white/[0.05] rounded-lg p-4 text-center text-xs text-gray-500 font-mono">
+                  No STGNN predictions loaded yet.
+                </div>
+              ) : (
+                allLinkForecasts.map(({ linkId, forecast, connectionKey }) => {
+                  return renderLinkForecastCard(linkId, forecast, () => {
+                    if (onSelectLink && connectionKey) {
+                      onSelectLink(connectionKey);
+                    }
+                  });
+                })
+              )}
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

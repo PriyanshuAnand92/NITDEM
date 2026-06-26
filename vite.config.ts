@@ -8,4 +8,17 @@ export default defineConfig({
       '@': '/src',
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor_react: ['react', 'react-dom'],
+          vendor_ui: ['recharts', 'framer-motion'],
+          vendor_map: ['leaflet', 'react-leaflet'],
+        },
+      },
+    },
+    chunkSizeWarningLimit: 800,
+  },
 })
+

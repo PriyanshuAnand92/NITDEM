@@ -45,7 +45,12 @@ export default function IncidentNotificationPanel({
   currentRole,
   isDark
 }: IncidentNotificationPanelProps) {
-  const [isOpen, setIsOpen] = useState(true);
+  const [isOpen, setIsOpen] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return window.innerWidth >= 1024;
+    }
+    return true;
+  });
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   // Calculate priority score out of 100
@@ -108,7 +113,7 @@ export default function IncidentNotificationPanel({
   };
 
   return (
-    <div className="relative h-full flex shrink-0 z-20">
+    <div className="absolute lg:relative left-0 top-14 lg:top-0 h-[calc(100vh-3.5rem)] lg:h-full flex shrink-0 z-[90] lg:z-20">
       <motion.div
         animate={{ width: isOpen ? 340 : 0 }}
         transition={{ duration: 0.3, ease: 'easeInOut' }}

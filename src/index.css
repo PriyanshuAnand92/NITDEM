@@ -70,20 +70,40 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   color: #111827 !important;
 }
 
-/* Override dark panels with light panels */
+/* Override dark panels with light panels, including all opacity modifiers */
 .light-mode header,
 .light-mode aside,
 .light-mode .intel-panel,
+.light-mode .timeline-seeker-card,
+.light-mode [class*="bg-[#0F1117]"],
+.light-mode [class*="bg-[#0f1117]"],
+.light-mode [class*="bg-[#151820]"],
 .light-mode .bg-\[\#0F1117\],
+.light-mode .bg-\[\#0F1117\]\/90,
 .light-mode .bg-\[\#0f1117\],
-.light-mode .bg-\[\#151820\] {
+.light-mode .bg-\[\#0f1117\]\/90,
+.light-mode .bg-\[\#151820\],
+.light-mode .bg-\[\#151820\]\/90 {
   background-color: #FFFFFF !important;
   background: #FFFFFF !important;
   border-color: rgba(0, 0, 0, 0.08) !important;
 }
 
+/* Toggle handle buttons on sidebar and incident drawer */
+.light-mode [class*="bg-[#1C202B]"],
+.light-mode [class*="bg-[#1c202b]"],
+.light-mode .bg-\[\#1C202B\],
+.light-mode .bg-\[\#1c202b\] {
+  background-color: #E5E7EB !important;
+  background: #E5E7EB !important;
+  border-color: rgba(0, 0, 0, 0.12) !important;
+  color: #374151 !important;
+}
+
 /* Background of main page areas */
 .light-mode main,
+.light-mode [class*="bg-[#0A0C10]"],
+.light-mode [class*="bg-[#0a0c10]"],
 .light-mode .bg-\[\#0A0C10\],
 .light-mode .bg-\[\#0a0c10\] {
   background-color: #F3F4F6 !important;
@@ -119,7 +139,24 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 }
 
 .light-mode .text-gray-600 {
-  color: #A0AEC0 !important;
+  color: #718096 !important; /* Improved contrast for visibility in light mode */
+}
+
+/* Slate text overrides */
+.light-mode .text-slate-200 {
+  color: #2D3748 !important;
+}
+.light-mode .text-slate-300 {
+  color: #374151 !important;
+}
+.light-mode .text-slate-400 {
+  color: #4B5563 !important;
+}
+.light-mode .text-slate-500 {
+  color: #6B7280 !important;
+}
+.light-mode .text-slate-600 {
+  color: #6B7280 !important;
 }
 
 /* High contrast Intel Panel overrides for light mode */
@@ -141,7 +178,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 }
 
 /* Menu hover overrides */
-.light-mode .hover\:bg-white\/\[0\.04\]:hover {
+.light-mode .hover\:bg-white\/\[0\.04\]:hover,
+.light-mode .hover\:bg-white\/\[0\.03\]:hover {
   background-color: rgba(0, 0, 0, 0.04) !important;
 }
 
@@ -166,6 +204,14 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   border-color: rgba(0, 0, 0, 0.12) !important;
 }
 
+.light-mode input[type="range"] {
+  background-color: rgba(0, 0, 0, 0.1) !important;
+}
+
+.light-mode .hover\:text-white:hover {
+  color: #000000 !important;
+}
+
 .light-mode option {
   background-color: #FFFFFF !important;
   color: #111827 !important;
@@ -178,25 +224,25 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 
 /* Responsive typography scale adjustments for enhanced accessibility and readability */
 @media (min-width: 640px) {
-  .text-\[8px\] { font-size: 10.5px !important; }
-  .text-\[9px\] { font-size: 11.5px !important; }
-  .text-\[10px\] { font-size: 13px !important; }
-  .text-\[11px\] { font-size: 14px !important; }
-  .text-xs { font-size: 14.5px !important; }
-  .text-sm { font-size: 16px !important; }
-  .text-base { font-size: 18px !important; }
-  .text-lg { font-size: 21px !important; }
-  .text-xl { font-size: 25px !important; }
+  .text-\[8px\] { font-size: 10px !important; }
+  .text-\[9px\] { font-size: 11px !important; }
+  .text-\[10px\] { font-size: 12px !important; }
+  .text-\[11px\] { font-size: 13.5px !important; }
+  .text-xs { font-size: 14px !important; }
+  .text-sm { font-size: 15.5px !important; }
+  .text-base { font-size: 17.5px !important; }
+  .text-lg { font-size: 20px !important; }
+  .text-xl { font-size: 24px !important; }
 }
 
 @media (max-width: 639px) {
-  .text-\[8px\] { font-size: 10px !important; }
-  .text-\[9px\] { font-size: 11px !important; }
-  .text-\[10px\] { font-size: 12.5px !important; }
-  .text-\[11px\] { font-size: 13.5px !important; }
-  .text-xs { font-size: 13.5px !important; }
-  .text-sm { font-size: 15px !important; }
-  .text-base { font-size: 17px !important; }
-  .text-lg { font-size: 19px !important; }
-  .text-xl { font-size: 23px !important; }
+  .text-\[8px\] { font-size: 9.5px !important; }
+  .text-\[9px\] { font-size: 10.5px !important; }
+  .text-\[10px\] { font-size: 11.5px !important; }
+  .text-\[11px\] { font-size: 12.5px !important; }
+  .text-xs { font-size: 13px !important; }
+  .text-sm { font-size: 14.5px !important; }
+  .text-base { font-size: 16.5px !important; }
+  .text-lg { font-size: 18.5px !important; }
+  .text-xl { font-size: 22px !important; }
 }

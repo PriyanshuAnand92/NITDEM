@@ -45,7 +45,7 @@ export default function AlertGenerator({ onCreateToken }: AlertGenProps) {
         <p className="text-xs text-gray-500 font-sans mt-0.5">Demo & Testing — Create intelligence tokens for any scenario</p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {/* Alert type selector */}
         <div className="space-y-2">
           <div className="text-xs font-sans font-semibold tracking-wider uppercase px-1 text-gray-400">Alert Type</div>

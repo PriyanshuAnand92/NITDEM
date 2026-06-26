@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import L from 'leaflet';
 import { Activity, Sparkles } from 'lucide-react';
-import type { TrafficNode, Drone, PredictionWindow, UserRole, Incident } from '../../types';
+import type { TrafficNode, Drone, PredictionWindow, UserRole, Incident, PlannedEvent } from '../../types';
 import { TRAFFIC_NODES, OPERATIONAL_ZONE, STATUS_COLORS, getPrediction, congestionToStatus, PREDICTION_WINDOW_LABELS } from '../../data/constants';
 import { statusLabel } from '../../utils';
 
@@ -28,6 +28,7 @@ interface CommandMapProps {
     queueLength?: number;
   }>;
   incidents: Incident[];
+  events: PlannedEvent[];
 }
 
 // Realigned road connections for Kozhikode 10-junction topology
@@ -112,7 +113,7 @@ function getConnectionTooltipContent(
   `;
 }
 
-export default function CommandMap({ nodes, selectedNode, onNodeSelect, selectedLink, onLinkSelect, drones, predictionWindow, onPredictionWindowChange, onDroneClick, currentRole, onUpdateDroneRoute, isDark, linkStatuses, incidents }: CommandMapProps) {
+export default function CommandMap({ nodes, selectedNode, onNodeSelect, selectedLink, onLinkSelect, drones, predictionWindow, onPredictionWindowChange, onDroneClick, currentRole, onUpdateDroneRoute, isDark, linkStatuses, incidents, events }: CommandMapProps) {
   const NODE_BY_ID = Object.fromEntries(nodes.map(node => [node.id, node]));
   const mapRef = useRef<HTMLDivElement>(null);
   const leafletMap = useRef<L.Map | null>(null);
@@ -384,61 +385,20 @@ export default function CommandMap({ nodes, selectedNode, onNodeSelect, selected
 
   // Update incident markers and popups on the map dynamically
   const incidentMarkersRef = useRef<Record<string, { marker: L.Marker; popup: L.Popup }>>({});
+  const eventMarkersRef = useRef<Record<string, { marker: L.Marker; polygon?: L.Polygon }>>({});
 
   useEffect(() => {
     if (!mapReady || !leafletMap.current) return;
 
-    // Filter active incidents to only show the one on the currently selected link or node
+    // Show ALL active/pending incidents on the map
     const activeIncidents = incidents.filter(i => {
-      if ((i.status !== 'active' && i.status !== 'pending') || i.lat === undefined || i.lng === undefined) {
-        return false;
-      }
-
-      // If nothing is selected, do not show incident markers on the map
-      if (!selectedLink && !selectedNode) {
-        return false;
-      }
-
-      // If a node is selected, check if nearestJunction matches the node name or ID
-      if (selectedNode) {
-        const nodeName = selectedNode.name.toLowerCase();
-        const nodeId = selectedNode.id.toLowerCase();
-        return i.nearestJunction?.toLowerCase().includes(nodeName) || 
-               i.nearestJunction?.toLowerCase().includes(nodeId);
-      }
-
-      // If a link is selected (e.g. 'mavoor-bus_stand')
-      if (selectedLink) {
-        const roadName = CONNECTION_TO_ROAD_NAME[selectedLink];
-        if (!roadName) return false;
-
-        // Check if location or affected roads match
-        const matchLocation = i.location?.toLowerCase() === roadName.toLowerCase() || 
-                             i.affectedRoads?.some(r => r.toLowerCase() === roadName.toLowerCase());
-
-        // Check if nearestJunction matches node endpoints
-        const [nodeAId, nodeBId] = selectedLink.split('-');
-        const nodeA = NODE_BY_ID[nodeAId];
-        const nodeB = NODE_BY_ID[nodeBId];
-        const matchNodeA = nodeA && (i.nearestJunction?.toLowerCase().includes(nodeA.name.toLowerCase()) || i.nearestJunction?.toLowerCase().includes(nodeA.id.toLowerCase()));
-        const matchNodeB = nodeB && (i.nearestJunction?.toLowerCase().includes(nodeB.name.toLowerCase()) || i.nearestJunction?.toLowerCase().includes(nodeB.id.toLowerCase()));
-
-        // Check GCS link ID
-        const connectionLinks = CONNECTION_TO_LINKS[selectedLink] || [];
-        const matchGcs = connectionLinks.some(linkId => 
-          i.id.includes(linkId) || (i.tokenId && i.tokenId.includes(linkId))
-        );
-
-        return matchLocation || matchNodeA || matchNodeB || matchGcs;
-      }
-
-      return false;
+      return (i.status === 'active' || i.status === 'pending') && i.lat !== undefined && i.lng !== undefined;
     });
 
     // Get current IDs
     const currentIds = new Set(activeIncidents.map(i => i.id));
 
-    // Remove any markers for incidents that are no longer active/selected
+    // Remove any markers for incidents that are no longer active/present
     Object.entries(incidentMarkersRef.current).forEach(([id, item]) => {
       if (!currentIds.has(id)) {
         item.marker.remove();
@@ -545,7 +505,112 @@ export default function CommandMap({ nodes, selectedNode, onNodeSelect, selected
       }
     });
 
-  }, [incidents, mapReady, selectedLink, selectedNode]);
+  }, [incidents, mapReady]);
+
+  // Update planned event markers and polygons dynamically
+  useEffect(() => {
+    if (!mapReady || !leafletMap.current) return;
+
+    const activeEvents = (events || []).filter(e => e.lat !== undefined && e.lng !== undefined);
+    const currentEventIds = new Set(activeEvents.map(e => e.id));
+
+    // Remove any markers/polygons for events that are no longer active/present
+    Object.entries(eventMarkersRef.current).forEach(([id, item]) => {
+      if (!currentEventIds.has(id)) {
+        item.marker.remove();
+        if (item.polygon) {
+          item.polygon.remove();
+        }
+        delete eventMarkersRef.current[id];
+      }
+    });
+
+    const EVENT_TYPE_COLORS: Record<string, string> = {
+      'Football Match': '#22C55E',
+      'Festival': '#F59E0B',
+      'Political Rally': '#EF4444',
+      'Procession': '#A855F7',
+      'VIP Visit': '#3B82F6',
+      'Road Work': '#F97316',
+      'Custom Event': '#06B6D4',
+    };
+
+    // Add or update markers for active events
+    activeEvents.forEach((ev) => {
+      const id = ev.id;
+      const lat = ev.lat!;
+      const lng = ev.lng!;
+      const color = EVENT_TYPE_COLORS[ev.type] || '#3B82F6';
+
+      const eventIcon = L.divIcon({
+        className: 'cursor-pointer',
+        html: `<div style="width: 26px; height: 26px; background: ${color}E0; border: 2px solid ${color}; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; box-shadow: 0 0 10px rgba(0,0,0,0.5); font-weight: bold; color: white;">📅</div>`,
+        iconSize: [26, 26],
+        iconAnchor: [13, 13],
+      });
+
+      const popupHtml = `
+        <div style="min-width: 220px; font-family: 'JetBrains Mono', monospace; background: #0F1117; border: 1px solid ${color}80; border-radius: 8px; padding: 10px; color: white;">
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 5px; margin-bottom: 5px;">
+            <div style="font-weight: 700; color: ${color}; font-size: 11px;">📅 ${ev.name}</div>
+            <span style="font-size: 8px; border: 1px solid ${color}; border-radius: 4px; padding: 1px 4px; font-weight: 700; text-transform: uppercase; color: white; background: ${color}40;">${ev.type}</span>
+          </div>
+          <div style="font-size: 10px; color: #E5E7EB; margin-bottom: 2px;">Zone: <strong>${ev.zoneName || 'Custom'}</strong></div>
+          <div style="font-size: 9px; color: #9CA3AF; margin-bottom: 2px;">Date: ${ev.date}</div>
+          <div style="font-size: 9px; color: #9CA3AF; margin-bottom: 4px;">Time: ${ev.startTime} - ${ev.endTime}</div>
+          <div style="font-size: 9px; color: #E5E7EB; border-top: 1px dashed rgba(255,255,255,0.08); padding-top: 5px; margin-top: 5px;">
+            <div><strong>Expected Attendance:</strong> ${ev.expectedAttendance.toLocaleString()}</div>
+            <div style="margin-top: 3px; color: #D1D5DB; line-height: 1.2;">${ev.description || 'No description provided.'}</div>
+            <div style="margin-top: 4px; color: #F59E0B; font-size: 8.5px;">Token ID: ${ev.tokenId}</div>
+          </div>
+        </div>
+      `;
+
+      // Update or create marker
+      let existing = eventMarkersRef.current[id];
+      if (existing) {
+        existing.marker.setLatLng([lat, lng]);
+        existing.marker.setPopupContent(popupHtml);
+        
+        // If polygon coordinates changed
+        if (ev.polygon && ev.polygon.length >= 3) {
+          if (existing.polygon) {
+            existing.polygon.setLatLngs(ev.polygon as L.LatLngExpression[]);
+          } else {
+            existing.polygon = L.polygon(ev.polygon as L.LatLngExpression[], {
+              color,
+              fillColor: color,
+              fillOpacity: 0.15,
+              weight: 2,
+              dashArray: '4 4'
+            }).addTo(leafletMap.current!);
+          }
+        } else if (existing.polygon) {
+          existing.polygon.remove();
+          existing.polygon = undefined;
+        }
+      } else {
+        const marker = L.marker([lat, lng], { icon: eventIcon }).addTo(leafletMap.current!);
+        marker.bindPopup(popupHtml, {
+          className: 'custom-popup-box',
+          offset: [0, -10],
+        });
+
+        let polygon: L.Polygon | undefined;
+        if (ev.polygon && ev.polygon.length >= 3) {
+          polygon = L.polygon(ev.polygon as L.LatLngExpression[], {
+            color,
+            fillColor: color,
+            fillOpacity: 0.15,
+            weight: 2,
+            dashArray: '4 4'
+          }).addTo(leafletMap.current!);
+        }
+
+        eventMarkersRef.current[id] = { marker, polygon };
+      }
+    });
+  }, [events, mapReady]);
 
   // Selected node highlighting + map color and position updates are handled below
   useEffect(() => {
