@@ -1,10 +1,10 @@
 import { motion } from 'framer-motion';
-import { Plane, Battery, Navigation, Activity, Radio, AlertTriangle } from 'lucide-react';
-import type { Drone } from '../../types';
-import { TRAFFIC_NODES } from '../../data/constants';
+import { Plane, Battery, Navigation, Radio, Activity, AlertTriangle } from 'lucide-react';
+import type { Drone, TrafficNode } from '../../types';
 
 interface DroneOpsProps {
   drones: Drone[];
+  nodes: TrafficNode[];
 }
 
 function BatteryBar({ level }: { level: number }) {
@@ -16,29 +16,29 @@ function BatteryBar({ level }: { level: number }) {
         <motion.div className="h-1.5 rounded-full" style={{ backgroundColor: color, width: `${level}%` }}
           initial={{ width: 0 }} animate={{ width: `${level}%` }} transition={{ duration: 1 }} />
       </div>
-      <span className="text-[10px] font-mono font-bold" style={{ color }}>{level.toFixed(0)}%</span>
+      <span className="text-xs font-mono font-bold" style={{ color }}>{level.toFixed(0)}%</span>
     </div>
   );
 }
 
-export default function DroneOperations({ drones }: DroneOpsProps) {
+export default function DroneOperations({ drones, nodes }: DroneOpsProps) {
   return (
     <div className="h-full overflow-y-auto p-4 space-y-4">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-lg font-bold text-white">Drone Operations</h1>
-          <p className="text-[11px] text-gray-500 font-mono">UAV Fleet · Real-Time Monitoring</p>
+          <p className="text-xs text-gray-500 font-sans mt-0.5">UAV Fleet · Real-Time Monitoring</p>
         </div>
         <div className="flex items-center gap-2">
           <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-          <span className="text-[10px] font-mono text-green-400">{drones.filter(d => d.status !== 'offline').length} DRONES ACTIVE</span>
+          <span className="text-xs font-mono text-green-400">{drones.filter(d => d.status !== 'offline').length} DRONES ACTIVE</span>
         </div>
       </div>
 
       {/* Fleet overview */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4">
         {drones.map((drone, i) => {
-          const targetNode = TRAFFIC_NODES.find(n => n.id === drone.targetNodeId);
+          const targetNode = nodes.find(n => n.id === drone.targetNodeId);
           return (
             <motion.div key={drone.id}
               initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }}
@@ -54,13 +54,13 @@ export default function DroneOperations({ drones }: DroneOpsProps) {
                   </motion.div>
                   <div>
                     <div className="text-sm font-bold text-white">{drone.name}</div>
-                    <div className="text-[9px] font-mono text-blue-400">ID: UAV-{drone.id.toUpperCase()}</div>
+                    <div className="text-[11px] font-mono text-blue-400">ID: UAV-{drone.id.toUpperCase()}</div>
                   </div>
                 </div>
                 <div className="flex items-center gap-1.5">
                   <motion.div animate={{ opacity: [1, 0.3, 1] }} transition={{ duration: 1, repeat: Infinity }}
                     className="w-2 h-2 rounded-full bg-green-400" />
-                  <span className="text-[9px] font-mono text-green-400">STREAMING LIVE</span>
+                  <span className="text-[11px] font-mono text-green-400">STREAMING LIVE</span>
                 </div>
               </div>
 
@@ -79,14 +79,14 @@ export default function DroneOperations({ drones }: DroneOpsProps) {
                     <div key={label} className="bg-white/[0.04] rounded-lg p-2 text-center">
                       <Icon className="w-3.5 h-3.5 mx-auto mb-1" style={{ color }} />
                       <div className="text-xs font-bold font-mono" style={{ color }}>{value}</div>
-                      <div className="text-[9px] text-gray-500">{label}</div>
+                      <div className="text-xs text-gray-500">{label}</div>
                     </div>
                   ))}
                 </div>
 
                 {/* Location */}
                 <div className="space-y-1">
-                  <div className="flex items-center justify-between text-[9px] font-mono text-gray-500">
+                  <div className="flex items-center justify-between text-[11px] font-mono text-gray-500">
                     <span>CURRENT POSITION</span>
                     <span>NAVIGATING TO</span>
                   </div>
@@ -102,8 +102,8 @@ export default function DroneOperations({ drones }: DroneOpsProps) {
 
                 {/* Coordinates */}
                 <div className="bg-white/[0.03] rounded-lg p-2 border border-white/[0.05]">
-                  <div className="text-[9px] font-mono text-gray-500 mb-1">LIVE COORDINATES</div>
-                  <div className="font-mono text-[10px] text-cyan-400">
+                  <div className="text-[11px] font-mono text-gray-500 mb-1">LIVE COORDINATES</div>
+                  <div className="font-mono text-xs text-cyan-400">
                     {drone.lat.toFixed(4)}°N · {drone.lng.toFixed(4)}°E
                   </div>
                 </div>
@@ -112,7 +112,7 @@ export default function DroneOperations({ drones }: DroneOpsProps) {
                 <div className="grid grid-cols-3 gap-2">
                   {['Recall', 'Hold', 'Reroute'].map(action => (
                     <button key={action}
-                      className="text-[10px] font-mono py-1.5 rounded border border-white/[0.08] text-gray-400 hover:text-white hover:border-blue-500/30 hover:bg-blue-500/10 transition-all">
+                      className="text-xs font-mono py-1.5 rounded border border-white/[0.08] text-gray-400 hover:text-white hover:border-blue-500/30 hover:bg-blue-500/10 transition-all">
                       {action}
                     </button>
                   ))}
@@ -136,7 +136,7 @@ export default function DroneOperations({ drones }: DroneOpsProps) {
             { time: '13:45', drone: 'Bravo', event: 'Vehicle breakdown detected on Mavoor Road — Token TK-8124 generated', type: 'incident' },
           ].map(({ time, drone, event, type }, i) => (
             <motion.div key={i} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.05 }}
-              className="flex items-start gap-3 text-[11px]">
+              className="flex items-start gap-3 text-xs">
               <span className="font-mono text-gray-600 shrink-0 pt-0.5">{time}</span>
               <span className={`shrink-0 font-mono font-bold ${drone === 'Alpha' ? 'text-blue-400' : 'text-purple-400'}`}>{drone}</span>
               <span className={`${type === 'warning' ? 'text-yellow-400' : type === 'incident' ? 'text-red-400' : type === 'success' ? 'text-green-400' : 'text-gray-400'}`}>

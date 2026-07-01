@@ -63,6 +63,7 @@ export interface Token {
   generatedBy: string;
   lat?: number;
   lng?: number;
+  mapImage?: string;
 }
 
 export interface Notification {
@@ -190,3 +191,43 @@ export interface RoadLinkMetadata {
 
 export type UserRole = 'supervisor' | 'operator' | 'technician';
 
+export interface GCSLinkData {
+  scenarioCode?: string;
+  timeS?: string;
+  timestamp?: string;
+  linkId: string;
+  travelTime: number;
+  speed: number;
+  volume: number;
+  queueDelay: number;
+  vehDelay: number;
+  stops: number;
+  occupancy: number;
+  queueLength: number;
+  maxQueueLength: number;
+  eventActive?: boolean;
+  eventExposure?: number;
+  eventIntensity?: number;
+  lanesBlocked?: number;
+  startLat?: string;
+  startLon?: string;
+  endLat?: string;
+  endLon?: string;
+  startLatDec?: number;
+  startLonDec?: number;
+  endLatDec?: number;
+  endLonDec?: number;
+}
+
+export interface GCSPredictionData {
+  predictionHorizonSec: number;
+  link: string;
+  queueTrue: number;
+  queuePred: number;
+  delayTrue: number;
+  delayPred: number;
+  predictionHorizonMin: number;
+  severityIndex: number;
+  severityLevel: 'LOW' | 'MODERATE' | 'HIGH' | 'CRITICAL';
+  recommendedStrategy: string;
+}

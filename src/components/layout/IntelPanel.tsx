@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Brain, Zap, Plane, AlertTriangle, Thermometer, Droplets, CloudRain, MapPin, TrendingUp, CheckCircle2, Sparkles, Activity, ArrowLeft, ChevronDown, ChevronUp, Siren, Clock } from 'lucide-react';
-import type { TrafficNode, Drone, PredictionWindow, RoadLinkMetadata, Incident } from '../../types';
+import type { TrafficNode, Drone, PredictionWindow, RoadLinkMetadata, Incident, GCSLinkData, GCSPredictionData } from '../../types';
 import { 
   AI_RECOMMENDATIONS, 
   WEATHER, 
@@ -10,8 +10,8 @@ import {
   congestionToStatus, 
   ROAD_LINKS_METADATA, 
   ROAD_HEALTH, 
-  roadHealthColor, 
-  TRAFFIC_NODES 
+  roadHealthColor,
+  TRAFFIC_NODES
 } from '../../data/constants';
 import { statusColor, statusLabel } from '../../utils';
 
@@ -20,11 +20,87 @@ interface IntelPanelProps {
   selectedLink: string | null;
   drones: Drone[];
   predictionWindow: PredictionWindow;
+  nodes: TrafficNode[];
+  linkStatuses: Record<string, {
+    status: 'free' | 'moderate' | 'heavy' | 'critical';
+    density: number;
+    speed: number;
+    volume: number;
+    travelTime: number;
+    queueLength?: number;
+  }>;
   incidents?: Incident[];
   onClearSelection?: () => void;
+  selectedTime?: string;
+  coordsLinkData?: GCSLinkData[];
+  gcsPredictions?: GCSPredictionData[];
+  onSelectLink?: (linkId: string | null) => void;
+
+  // What-If Simulation Sandbox states
+  isWhatIfActive?: boolean;
+  setIsWhatIfActive?: (val: boolean) => void;
+  whatIfLanesBlocked?: number;
+  setWhatIfLanesBlocked?: (val: number) => void;
+  whatIfEventIntensity?: number;
+  setWhatIfEventIntensity?: (val: number) => void;
+  whatIfRetimingSeconds?: number;
+  setWhatIfRetimingSeconds?: (val: number) => void;
+  isRetimingApplied?: boolean;
+  setIsRetimingApplied?: (val: boolean) => void;
+
+  // Playback/Timeline control states
+  uniqueTimestamps?: string[];
+  onTimeChange?: (time: string) => void;
+  playbackIndex?: number;
+  setPlaybackIndex?: (idx: number) => void;
+  isPlaybackPlaying?: boolean;
+  setIsPlaybackPlaying?: (val: boolean) => void;
+  playbackSpeed?: number;
+  setPlaybackSpeed?: (val: number) => void;
+  selectedDate?: string;
+  setSelectedDate?: (date: string) => void;
+  onClose?: () => void;
 }
 
-export default function IntelPanel({ selectedNode, selectedLink, drones, predictionWindow, incidents = [], onClearSelection }: IntelPanelProps) {
+export default function IntelPanel({ 
+  selectedNode, 
+  selectedLink, 
+  drones, 
+  predictionWindow, 
+  nodes, 
+  linkStatuses,
+  incidents = [], 
+  onClearSelection,
+  selectedTime = '00:00:00',
+  coordsLinkData = [],
+  gcsPredictions = [],
+  onSelectLink,
+
+  // Simulation Sandbox states
+  isWhatIfActive = false,
+  setIsWhatIfActive = () => {},
+  whatIfLanesBlocked = 0,
+  setWhatIfLanesBlocked = () => {},
+  whatIfEventIntensity = 0,
+  setWhatIfEventIntensity = () => {},
+  whatIfRetimingSeconds = 18,
+  setWhatIfRetimingSeconds = () => {},
+  isRetimingApplied = false,
+  setIsRetimingApplied = () => {},
+
+  // Playback states
+  uniqueTimestamps = [],
+  onTimeChange = () => {},
+  playbackIndex = 0,
+  setPlaybackIndex = () => {},
+  isPlaybackPlaying = true,
+  setIsPlaybackPlaying = () => {},
+  playbackSpeed = 1,
+  setPlaybackSpeed = () => {},
+  selectedDate = '',
+  setSelectedDate = () => {},
+  onClose,
+}: IntelPanelProps) {
   const [activeTab, setActiveTab] = useState<'live' | 'forecast20'>('live');
   const [expandedIncident, setExpandedIncident] = useState<string | null>(null);
   const recs = selectedNode ? (AI_RECOMMENDATIONS[selectedNode.id] || []) : [];
@@ -34,14 +110,83 @@ export default function IntelPanel({ selectedNode, selectedLink, drones, predict
   const prediction = selectedNode ? getPrediction(selectedNode, predictionWindow) : null;
   const isPredicting = predictionWindow !== 'current';
 
+  const handleTimeSelectorChange = (newTime: string) => {
+    if (uniqueTimestamps.length === 0) return;
+    let closestIdx = 0;
+    let minDiff = Infinity;
+    
+    const parseToSec = (t: string) => {
+      const [h, m, s] = t.split(':').map(Number);
+      return (h || 0) * 3600 + (m || 0) * 60 + (s || 0);
+    };
+    
+    const targetSec = parseToSec(newTime);
+    for (let i = 0; i < uniqueTimestamps.length; i++) {
+      const diff = Math.abs(parseToSec(uniqueTimestamps[i]) - targetSec);
+      if (diff < minDiff) {
+        minDiff = diff;
+        closestIdx = i;
+      }
+    }
+    
+    setPlaybackIndex(closestIdx);
+    onTimeChange(uniqueTimestamps[closestIdx]);
+  };
+
+  const connectionToLinks: Record<string, [string, string]> = {
+    'mavoor-bus_stand': ['L23', 'L11'],
+    'bus_stand-arayidathupalam': ['L19', 'L13'],
+    'arayidathupalam-midtown': ['L1', 'L18'],
+    'midtown-east_bypass': ['L2', 'L24'],
+    'east_bypass-poonthanam': ['L20', 'L7'],
+    'poonthanam-palayam': ['L21', 'L9'],
+    'palayam-mananchira': ['L22', 'L8'],
+    'mavoor-mananchira': ['L26', 'L14'],
+    'bus_stand-stadium': ['L6', 'L17'],
+    'stadium-midtown': ['L3', 'L16'],
+    'stadium-poonthanam': ['L4', 'L10'],
+    'stadium-mananchira': ['L5', 'L15'],
+  };
+
+  const directionData = (() => {
+    if (!selectedLink || selectedNode) return [];
+    const mappedIds = connectionToLinks[selectedLink] || [];
+    const [aId, bId] = selectedLink.split('-');
+    const aNode = nodes.find(n => n.id === aId);
+    const bNode = nodes.find(n => n.id === bId);
+    if (!aNode || !bNode) return [];
+    
+    const [lOut, lIn] = mappedIds;
+    
+    const outRow = coordsLinkData.find(row => row.timestamp === selectedTime && row.linkId === lOut);
+    const inRow = coordsLinkData.find(row => row.timestamp === selectedTime && row.linkId === lIn);
+    
+    const res = [];
+    if (outRow) {
+      res.push({
+        direction: `${aNode.name} → ${bNode.name}`,
+        linkId: lOut,
+        row: outRow
+      });
+    }
+    if (inRow) {
+      res.push({
+        direction: `${bNode.name} → ${aNode.name}`,
+        linkId: lIn,
+        row: inRow
+      });
+    }
+    return res;
+  })();
+
   // Find nodes and metadata for selectedLink
   const { linkNodes, linkMetadata, linkStats, linkRecommendations } = (() => {
     if (!selectedLink || selectedNode) {
       return { linkNodes: null, linkMetadata: null, linkStats: null, linkRecommendations: [] };
     }
     const [aId, bId] = selectedLink.split('-');
-    const a = TRAFFIC_NODES.find(n => n.id === aId);
-    const b = TRAFFIC_NODES.find(n => n.id === bId);
+    const a = nodes.find(n => n.id === aId);
+    const b = nodes.find(n => n.id === bId);
     if (!a || !b) {
       return { linkNodes: null, linkMetadata: null, linkStats: null, linkRecommendations: [] };
     }
@@ -73,7 +218,15 @@ export default function IntelPanel({ selectedNode, selectedLink, drones, predict
     const delayMins = worseStatus === 'critical' ? 3.5 : worseStatus === 'heavy' ? 2.0 : worseStatus === 'moderate' ? 0.5 : 0;
     const travelMins = parseFloat((baseMins + delayMins).toFixed(1));
 
-    const stats = {
+    const linkStatsVal = linkStatuses[selectedLink] || linkStatuses[`${bId}-${aId}`];
+    const stats = linkStatsVal ? {
+      avgDensity: linkStatsVal.density,
+      totalVehicles: linkStatsVal.volume,
+      avgSpeed: linkStatsVal.speed,
+      worseStatus: linkStatsVal.status,
+      travelMins: linkStatsVal.travelTime,
+      queueLength: linkStatsVal.queueLength,
+    } : {
       avgDensity,
       totalVehicles,
       avgSpeed,
@@ -112,12 +265,11 @@ export default function IntelPanel({ selectedNode, selectedLink, drones, predict
   })();
 
   return (
-    <div className="h-full flex flex-col border-l border-white/[0.06] overflow-hidden bg-[#0F1117]"
-      style={{ width: 260 }}>
+    <div className="intel-panel h-full w-full lg:w-[380px] flex flex-col border-l lg:border-white/[0.06] border-transparent overflow-hidden bg-[#0F1117]">
       
       {/* Panel header */}
       <div className="border-b border-white/[0.06] shrink-0">
-        <div className="h-12 flex items-center justify-between px-3">
+        <div className="h-14 flex items-center justify-between px-3">
           {(selectedNode || selectedLink) && onClearSelection ? (
             <button
               onClick={onClearSelection}
@@ -127,12 +279,23 @@ export default function IntelPanel({ selectedNode, selectedLink, drones, predict
               <ArrowLeft className="w-3.5 h-3.5" /> Back to overview
             </button>
           ) : (
-            <span className="text-[10px] font-mono text-gray-500 tracking-widest uppercase">Intelligence</span>
+            <span className="text-xs font-mono text-gray-400 tracking-wider uppercase font-bold">Intelligence</span>
           )}
-          <div className="flex items-center gap-1">
-            <motion.div animate={{ opacity: [1, 0.3, 1] }} transition={{ duration: 1.5, repeat: Infinity }}
-              className="w-1 h-1 rounded-full bg-orange-400" />
-            <span className="text-[9px] font-mono text-orange-400">LIVE</span>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1">
+              <motion.div animate={{ opacity: [1, 0.3, 1] }} transition={{ duration: 1.5, repeat: Infinity }}
+                className="w-1.5 h-1.5 rounded-full bg-orange-400" />
+              <span className="text-[10px] font-mono text-orange-400 font-bold">LIVE</span>
+            </div>
+            {onClose && (
+              <button
+                onClick={onClose}
+                className="text-gray-500 hover:text-white transition-colors p-1 text-sm leading-none"
+                aria-label="Close intelligence panel"
+              >
+                ✕
+              </button>
+            )}
           </div>
         </div>
         {/* Tabs */}
@@ -154,7 +317,35 @@ export default function IntelPanel({ selectedNode, selectedLink, drones, predict
 
       <div className="flex-1 overflow-y-auto p-3 space-y-3">
         {activeTab === 'forecast20' ? (
-          <Forecast20Panel selectedNode={selectedNode} />
+          <Forecast20Panel 
+            selectedNode={selectedNode}
+            selectedLink={selectedLink}
+            gcsPredictions={gcsPredictions}
+            linkStatuses={linkStatuses}
+            onSelectLink={onSelectLink}
+            nodes={nodes}
+            selectedTime={selectedTime}
+            isWhatIfActive={isWhatIfActive}
+            setIsWhatIfActive={setIsWhatIfActive}
+            whatIfLanesBlocked={whatIfLanesBlocked}
+            setWhatIfLanesBlocked={setWhatIfLanesBlocked}
+            whatIfEventIntensity={whatIfEventIntensity}
+            setWhatIfEventIntensity={setWhatIfEventIntensity}
+            whatIfRetimingSeconds={whatIfRetimingSeconds}
+            setWhatIfRetimingSeconds={setWhatIfRetimingSeconds}
+            isRetimingApplied={isRetimingApplied}
+            setIsRetimingApplied={setIsRetimingApplied}
+            uniqueTimestamps={uniqueTimestamps}
+            selectedDate={selectedDate}
+            setSelectedDate={setSelectedDate}
+            playbackIndex={playbackIndex}
+            setPlaybackIndex={setPlaybackIndex}
+            isPlaybackPlaying={isPlaybackPlaying}
+            setIsPlaybackPlaying={setIsPlaybackPlaying}
+            playbackSpeed={playbackSpeed}
+            setPlaybackSpeed={setPlaybackSpeed}
+            onTimeChange={onTimeChange}
+          />
         ) : (
         /* Selected node info */
         <AnimatePresence mode="wait">
@@ -167,16 +358,21 @@ export default function IntelPanel({ selectedNode, selectedLink, drones, predict
                 <div className="bg-white/[0.04] rounded-lg p-3 border border-white/[0.06]">
                   <div className="flex items-center gap-2 mb-2">
                     <MapPin className="w-3.5 h-3.5 text-orange-400 shrink-0" />
-                    <span className="text-xs font-semibold text-white">{selectedNode.name}</span>
+                    <span className="text-sm font-bold text-white">{selectedNode.name}</span>
                   </div>
+                  {['stadium', 'midtown', 'bus_stand', 'mavoor'].includes(selectedNode.id) && (
+                    <div className="flex items-center gap-1 bg-yellow-500/15 border border-yellow-500/30 text-yellow-400 px-2 py-0.5 rounded text-[10px] font-mono w-max mb-2 font-bold">
+                      🚦 Signalized Intersection
+                    </div>
+                  )}
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full" style={{ backgroundColor: statusColor(isPredicting ? congestionToStatus(prediction!.congestion) : selectedNode.status) }} />
-                      <span className="text-[10px] font-mono" style={{ color: statusColor(isPredicting ? congestionToStatus(prediction!.congestion) : selectedNode.status) }}>
+                      <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: statusColor(isPredicting ? congestionToStatus(prediction!.congestion) : selectedNode.status) }} />
+                      <span className="text-xs font-mono font-bold" style={{ color: statusColor(isPredicting ? congestionToStatus(prediction!.congestion) : selectedNode.status) }}>
                         {statusLabel(isPredicting ? congestionToStatus(prediction!.congestion) : selectedNode.status).toUpperCase()}
                       </span>
                     </div>
-                    <div className={`flex items-center gap-1 text-[9px] font-mono px-1.5 py-0.5 rounded ${
+                    <div className={`flex items-center gap-1 text-xs font-mono px-1.5 py-0.5 rounded font-bold ${
                       isPredicting ? 'bg-orange-500/15 text-orange-400' : 'bg-green-500/15 text-green-400'
                     }`}>
                       {isPredicting ? <Sparkles className="w-2.5 h-2.5" /> : <Activity className="w-2.5 h-2.5" />}
@@ -196,12 +392,12 @@ export default function IntelPanel({ selectedNode, selectedLink, drones, predict
                         { label: 'Confidence', value: `${prediction.confidence}%`, color: '#A855F7' },
                       ].map(({ label, value, color }) => (
                         <div key={label} className="bg-white/[0.03] rounded-lg p-2 border border-white/[0.05]">
-                          <div className="text-[9px] text-gray-500 font-mono mb-1">{label}</div>
-                          <div className="text-sm font-bold font-mono" style={{ color }}>{value}</div>
+                          <div className="text-[10px] text-gray-400 font-sans font-bold mb-1">{label}</div>
+                          <div className="text-base font-extrabold font-mono" style={{ color }}>{value}</div>
                         </div>
                       ))}
                       <div className="col-span-2 bg-white/[0.03] rounded-lg p-2 border border-white/[0.05] flex items-center justify-between">
-                        <div className="text-[9px] text-gray-500 font-mono">Predicted Congestion</div>
+                        <div className="text-[10px] text-gray-400 font-sans font-bold">Predicted Congestion</div>
                         <div className="text-xs font-bold font-mono capitalize" style={{ color: statusColor(congestionToStatus(prediction.congestion)) }}>
                           {prediction.congestion}
                         </div>
@@ -216,8 +412,8 @@ export default function IntelPanel({ selectedNode, selectedLink, drones, predict
                         { label: 'Incidents', value: selectedNode.incidentCount.toString(), color: selectedNode.incidentCount > 0 ? '#EF4444' : '#22C55E' },
                       ].map(({ label, value, color }) => (
                         <div key={label} className="bg-white/[0.03] rounded-lg p-2 border border-white/[0.05]">
-                          <div className="text-[9px] text-gray-500 font-mono mb-1">{label}</div>
-                          <div className="text-sm font-bold font-mono" style={{ color }}>{value}</div>
+                          <div className="text-[10px] text-gray-400 font-sans font-bold mb-1">{label}</div>
+                          <div className="text-base font-extrabold font-mono" style={{ color }}>{value}</div>
                         </div>
                       ))}
                     </>
@@ -228,16 +424,16 @@ export default function IntelPanel({ selectedNode, selectedLink, drones, predict
                 <div className="rounded-lg border border-orange-500/20 overflow-hidden">
                   <div className="bg-orange-500/10 px-3 py-1.5 flex items-center gap-2">
                     <Brain className="w-3 h-3 text-orange-400" />
-                    <span className="text-[10px] font-mono text-orange-400 tracking-wider">AI RECOMMENDATIONS</span>
-                    <span className="ml-auto text-[9px] text-orange-300 font-mono">96% conf.</span>
+                    <span className="text-xs font-mono text-orange-400 tracking-wider font-bold">AI RECOMMENDATIONS</span>
+                    <span className="ml-auto text-[10px] text-orange-300 font-mono font-bold">96% conf.</span>
                   </div>
                   <div className="p-2 space-y-1.5">
                     {recs.map((rec, i) => (
                       <motion.div key={i} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }}
                         transition={{ delay: i * 0.1 }}
                         className="flex items-start gap-2">
-                        <Zap className="w-3 h-3 text-orange-400 shrink-0 mt-0.5" />
-                        <span className="text-[10px] text-gray-300 leading-relaxed">{rec}</span>
+                        <Zap className="w-4 h-4 text-orange-400 shrink-0 mt-0.5" />
+                        <span className="text-xs text-gray-200 leading-relaxed font-sans">{rec}</span>
                       </motion.div>
                     ))}
                   </div>
@@ -248,16 +444,16 @@ export default function IntelPanel({ selectedNode, selectedLink, drones, predict
                   <div className="rounded-lg border border-blue-500/20 overflow-hidden">
                     <div className="bg-blue-500/10 px-3 py-1.5 flex items-center gap-2">
                       <Plane className="w-3 h-3 text-blue-400" />
-                      <span className="text-[10px] font-mono text-blue-400 tracking-wider">DRONE COVERAGE</span>
+                      <span className="text-xs font-mono text-blue-400 tracking-wider font-bold">DRONE COVERAGE</span>
                     </div>
                     <div className="p-2 space-y-2">
                       {nearbyDrones.map(drone => (
                         <div key={drone.id} className="flex items-center justify-between">
                           <div>
-                            <div className="text-[10px] font-mono text-white">{drone.name}</div>
-                            <div className="text-[9px] text-gray-500">{drone.altitude}m · {drone.battery}% batt.</div>
+                            <div className="text-xs font-mono text-white font-bold">{drone.name}</div>
+                            <div className="text-[10px] text-gray-400">{drone.altitude}m · {drone.battery}% batt.</div>
                           </div>
-                          <span className="text-[9px] font-mono text-green-400 bg-green-500/10 px-1.5 py-0.5 rounded">
+                          <span className="text-[10px] font-mono text-green-400 bg-green-500/10 px-1.5 py-0.5 rounded font-bold">
                             ACTIVE
                           </span>
                         </div>
@@ -271,10 +467,10 @@ export default function IntelPanel({ selectedNode, selectedLink, drones, predict
                   <div className="rounded-lg border border-red-500/20 overflow-hidden">
                     <div className="bg-red-500/10 px-3 py-1.5 flex items-center gap-2">
                       <AlertTriangle className="w-3 h-3 text-red-400" />
-                      <span className="text-[10px] font-mono text-red-400">{selectedNode.incidentCount} INCIDENT(S)</span>
+                      <span className="text-xs font-mono text-red-400 font-bold">{selectedNode.incidentCount} INCIDENT(S)</span>
                     </div>
                     <div className="p-2">
-                      <span className="text-[10px] text-gray-400">Active incidents at this node. Review Incident Center.</span>
+                      <span className="text-xs text-gray-400">Active incidents at this node. Review Incident Center.</span>
                     </div>
                   </div>
                 )}
@@ -285,19 +481,19 @@ export default function IntelPanel({ selectedNode, selectedLink, drones, predict
                 <div className="bg-white/[0.04] rounded-lg p-3 border border-white/[0.06]">
                   <div className="flex items-center gap-2 mb-1">
                     <TrendingUp className="w-3.5 h-3.5 text-orange-400 shrink-0" />
-                    <span className="text-xs font-semibold text-white">{linkMetadata.name}</span>
+                    <span className="text-sm font-bold text-white">{linkMetadata.name}</span>
                   </div>
-                  <div className="text-[9px] text-gray-500 font-mono mb-2">
+                  <div className="text-[10px] text-gray-400 font-sans mb-2 font-semibold">
                     {linkNodes.a.name} ↔ {linkNodes.b.name} ({linkMetadata.type})
                   </div>
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full" style={{ backgroundColor: statusColor(linkStats.worseStatus) }} />
-                      <span className="text-[10px] font-mono" style={{ color: statusColor(linkStats.worseStatus) }}>
+                      <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: statusColor(linkStats.worseStatus) }} />
+                      <span className="text-xs font-mono font-bold" style={{ color: statusColor(linkStats.worseStatus) }}>
                         {statusLabel(linkStats.worseStatus).toUpperCase()}
                       </span>
                     </div>
-                    <div className={`flex items-center gap-1 text-[9px] font-mono px-1.5 py-0.5 rounded ${
+                    <div className={`flex items-center gap-1 text-xs font-mono px-1.5 py-0.5 rounded font-bold ${
                       isPredicting ? 'bg-orange-500/15 text-orange-400' : 'bg-green-500/15 text-green-400'
                     }`}>
                       {isPredicting ? <Sparkles className="w-2.5 h-2.5" /> : <Activity className="w-2.5 h-2.5" />}
@@ -306,20 +502,244 @@ export default function IntelPanel({ selectedNode, selectedLink, drones, predict
                   </div>
                 </div>
 
-                {/* Stats grid */}
-                <div className="grid grid-cols-2 gap-2">
-                  {[
-                    { label: 'Avg Density', value: `${linkStats.avgDensity}%`, color: linkStats.avgDensity > 80 ? '#EF4444' : linkStats.avgDensity > 60 ? '#F97316' : '#22C55E' },
-                    { label: 'Est. Travel Time', value: `${linkStats.travelMins} min`, color: linkStats.worseStatus === 'critical' ? '#EF4444' : linkStats.worseStatus === 'heavy' ? '#F97316' : '#22C55E' },
-                    { label: 'Avg Speed', value: `${linkStats.avgSpeed} km/h`, color: '#3B82F6' },
-                    { label: 'Combined Volume', value: linkStats.totalVehicles.toLocaleString(), color: '#A855F7' },
-                  ].map(({ label, value, color }) => (
-                    <div key={label} className="bg-white/[0.03] rounded-lg p-2 border border-white/[0.05]">
-                      <div className="text-[9px] text-gray-500 font-mono mb-1">{label}</div>
-                      <div className="text-sm font-bold font-mono" style={{ color }}>{value}</div>
+                {/* Embedded Temporal Control Center */}
+                {uniqueTimestamps.length > 0 && (
+                  <div className="timeline-seeker-card bg-[#0F1117]/90 border border-white/[0.08] rounded-xl p-3 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-mono text-gray-400 tracking-wider uppercase font-bold">Timeline Seeker</span>
+                      <div className="text-xs font-mono font-extrabold text-orange-400 bg-orange-400/10 border border-orange-400/20 px-2 py-0.5 rounded flex items-center gap-1.5">
+                        <Clock className="w-3.5 h-3.5 animate-pulse" />
+                        {selectedTime}
+                      </div>
                     </div>
-                  ))}
-                </div>
+
+                    {/* Time & Date Inputs Row */}
+                    <div className="flex items-center justify-between gap-1.5 bg-white/[0.02] border border-white/[0.04] p-1.5 rounded-lg">
+                      {/* Date Picker */}
+                      <div className="flex flex-col gap-0.5">
+                        <label className="text-[7.5px] font-mono text-gray-500 uppercase font-bold">Date</label>
+                        <input
+                          type="date"
+                          value={selectedDate}
+                          onChange={(e) => setSelectedDate(e.target.value)}
+                          className="bg-white/[0.04] border border-white/[0.08] rounded px-1.5 py-0.5 text-[10px] font-mono text-white focus:outline-none focus:border-orange-500/50 w-24 shrink-0 font-bold"
+                        />
+                      </div>
+
+                      {/* Time Selectors */}
+                      <div className="flex flex-col gap-0.5 flex-1 items-end">
+                        <label className="text-[7.5px] font-mono text-gray-500 uppercase font-bold pr-1">Target Time (HH:MM:SS)</label>
+                        <div className="flex items-center gap-1">
+                          {/* Hour select */}
+                          <select
+                            value={selectedTime.split(':')[0] || '00'}
+                            onChange={(e) => {
+                              const [_, m, s] = selectedTime.split(':');
+                              handleTimeSelectorChange(`${e.target.value}:${m || '00'}:${s || '00'}`);
+                            }}
+                            className="bg-white/[0.04] border border-white/[0.08] rounded px-1 py-0.5 text-[10px] font-mono text-white focus:outline-none focus:border-orange-500/50 w-[38px] text-center font-bold"
+                          >
+                            {Array.from({ length: 24 }, (_, i) => {
+                              const val = String(i).padStart(2, '0');
+                              return <option key={val} value={val} className="bg-[#0F1117] text-white">{val}</option>;
+                            })}
+                          </select>
+
+                          <span className="text-[9px] text-gray-500 font-mono">:</span>
+
+                          {/* Minute select */}
+                          <select
+                            value={selectedTime.split(':')[1] || '00'}
+                            onChange={(e) => {
+                              const [h, _, s] = selectedTime.split(':');
+                              handleTimeSelectorChange(`${h || '00'}:${e.target.value}:${s || '00'}`);
+                            }}
+                            className="bg-white/[0.04] border border-white/[0.08] rounded px-1 py-0.5 text-[10px] font-mono text-white focus:outline-none focus:border-orange-500/50 w-[38px] text-center font-bold"
+                          >
+                            {Array.from({ length: 60 }, (_, i) => {
+                              const val = String(i).padStart(2, '0');
+                              return <option key={val} value={val} className="bg-[#0F1117] text-white">{val}</option>;
+                            })}
+                          </select>
+
+                          <span className="text-[9px] text-gray-500 font-mono">:</span>
+
+                          {/* Second select */}
+                          <select
+                            value={selectedTime.split(':')[2] || '00'}
+                            onChange={(e) => {
+                              const [h, m, _] = selectedTime.split(':');
+                              handleTimeSelectorChange(`${h || '00'}:${m || '00'}:${e.target.value}`);
+                            }}
+                            className="bg-white/[0.04] border border-white/[0.08] rounded px-1 py-0.5 text-[10px] font-mono text-white focus:outline-none focus:border-orange-500/50 w-[38px] text-center font-bold"
+                          >
+                            {Array.from({ length: 12 }, (_, i) => {
+                              const val = String(i * 5).padStart(2, '0');
+                              return <option key={val} value={val} className="bg-[#0F1117] text-white">{val}</option>;
+                            })}
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Playback Controls Row */}
+                    <div className="flex items-center justify-between gap-3">
+                      {/* Step back */}
+                      <button
+                        onClick={() => {
+                          const nextIdx = (playbackIndex - 1 + uniqueTimestamps.length) % uniqueTimestamps.length;
+                          setPlaybackIndex(nextIdx);
+                        }}
+                        title="Step Back"
+                        className="w-8 h-8 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] flex items-center justify-center text-[10px] text-gray-300 hover:text-white"
+                      >
+                        ◀
+                      </button>
+
+                      {/* Play/Pause */}
+                      <button
+                        onClick={() => setIsPlaybackPlaying(!isPlaybackPlaying)}
+                        title={isPlaybackPlaying ? "Pause Playback" : "Start Playback"}
+                        className={`flex-1 h-8 rounded-lg border flex items-center justify-center font-bold text-[10px] gap-1 ${
+                          isPlaybackPlaying 
+                            ? 'bg-orange-500/10 text-orange-400 border-orange-500/30 hover:bg-orange-500/20' 
+                            : 'bg-green-500/10 text-green-400 border-green-500/30 hover:bg-green-500/20'
+                        }`}
+                      >
+                        {isPlaybackPlaying ? 'PAUSE' : 'PLAY'}
+                      </button>
+
+                      {/* Step forward */}
+                      <button
+                        onClick={() => {
+                          const nextIdx = (playbackIndex + 1) % uniqueTimestamps.length;
+                          setPlaybackIndex(nextIdx);
+                        }}
+                        title="Step Forward"
+                        className="w-8 h-8 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] flex items-center justify-center text-[10px] text-gray-300 hover:text-white"
+                      >
+                        ▶
+                      </button>
+                    </div>
+
+                    {/* Range Scrubber */}
+                    <div className="space-y-1">
+                      <input
+                        type="range"
+                        min="0"
+                        max={uniqueTimestamps.length - 1}
+                        value={playbackIndex}
+                        onChange={(e) => {
+                          const idx = parseInt(e.target.value, 10);
+                          setPlaybackIndex(idx);
+                          if (uniqueTimestamps[idx]) {
+                            onTimeChange(uniqueTimestamps[idx]);
+                          }
+                        }}
+                        className="w-full h-1 bg-white/10 rounded-lg appearance-none cursor-pointer accent-orange-500"
+                      />
+                      <div className="flex justify-between text-[8px] font-mono text-gray-500">
+                        <span>START (00:00)</span>
+                        <span>Index: {playbackIndex + 1} / {uniqueTimestamps.length}</span>
+                        <span>END (24:00)</span>
+                      </div>
+                    </div>
+
+                    {/* Playback speed selector */}
+                    <div className="flex items-center justify-between border-t border-white/[0.04] pt-2">
+                      <span className="text-[9px] font-mono text-gray-500 uppercase">Playback Speed</span>
+                      <div className="flex gap-1">
+                        {[1, 5, 15, 30].map((speed) => (
+                          <button
+                            key={speed}
+                            onClick={() => setPlaybackSpeed(speed)}
+                            className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-bold transition-all ${
+                              playbackSpeed === speed
+                                ? 'bg-orange-500 text-[#0F1117]'
+                                : 'bg-white/[0.03] text-gray-400 hover:text-white border border-white/[0.04]'
+                            }`}
+                          >
+                            {speed}x
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Stats grid / Telemetry details at selectedTime */}
+                {directionData.length > 0 ? (
+                  <div className="space-y-3">
+                    <div className="text-[10px] font-mono text-gray-400 tracking-wider uppercase px-1 font-bold">
+                      Corridor Telemetry Data
+                    </div>
+                    {directionData.map(({ direction, linkId, row }) => (
+                      <div key={linkId} className="bg-white/[0.03] border border-white/[0.05] rounded-xl p-3 space-y-3">
+                        <div className="flex items-center justify-between border-b border-white/[0.04] pb-2">
+                          <span className="text-[11px] font-extrabold text-orange-400 font-sans truncate pr-2" title={direction}>
+                            {direction}
+                          </span>
+                          <span className="text-[9px] font-mono text-gray-500 bg-white/[0.04] px-2 py-0.5 rounded font-bold uppercase tracking-wider shrink-0">
+                            ID: {linkId}
+                          </span>
+                        </div>
+
+                        {/* 3x3 Traffic Metrics Grid */}
+                        <div className="grid grid-cols-3 gap-1.5 text-center">
+                          {[
+                            { label: 'Speed', value: `${row.speed} km/h`, color: 'text-blue-400' },
+                            { label: 'Travel Time', value: `${row.travelTime} s`, color: 'text-green-400' },
+                            { label: 'Volume', value: row.volume.toLocaleString(), color: 'text-purple-400' },
+                            { label: 'Occupancy', value: `${row.occupancy}%`, color: 'text-red-400' },
+                            { label: 'Queue Length', value: row.queueLength, color: 'text-orange-400' },
+                            { label: 'Queue Delay', value: `${row.queueDelay} s`, color: 'text-yellow-400' },
+                            { label: 'Vehicle Delay', value: `${row.vehDelay} s`, color: 'text-pink-400' },
+                            { label: 'Stops Count', value: row.stops, color: 'text-cyan-400' },
+                            { label: 'Max Queue', value: row.maxQueueLength, color: 'text-indigo-400' },
+                          ].map((item) => (
+                            <div key={item.label} className="bg-white/[0.02] rounded-lg p-2 border border-white/[0.04] flex flex-col justify-between h-[45px]">
+                              <div className="text-[7.5px] text-gray-500 font-sans font-bold leading-tight uppercase truncate">{item.label}</div>
+                              <div className={`text-xs font-extrabold font-mono mt-0.5 ${item.color}`}>{item.value}</div>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Geospatial Coordinate Alignment Section */}
+                        <div className="bg-white/[0.02] rounded-lg p-2 border border-white/[0.04] space-y-1.5">
+                          <div className="flex items-center gap-1.5 text-[8.5px] font-mono text-gray-400 uppercase tracking-wider font-bold">
+                            <MapPin className="w-3 h-3 text-orange-400" /> Geographic Path Alignment
+                          </div>
+                          <div className="grid grid-cols-2 gap-2 text-[9px] font-sans">
+                            <div className="border-r border-white/[0.04] pr-1.5">
+                              <span className="text-gray-500 font-bold text-[7.5px] font-mono block">START POINT</span>
+                              <div className="text-gray-300 truncate text-[9.5px] font-mono" title={row.startLat}>{row.startLat}</div>
+                              <div className="text-gray-300 truncate text-[9.5px] font-mono mt-0.5" title={row.startLon}>{row.startLon}</div>
+                            </div>
+                            <div className="pl-0.5">
+                              <span className="text-gray-500 font-bold text-[7.5px] font-mono block">END POINT</span>
+                              <div className="text-gray-300 truncate text-[9.5px] font-mono" title={row.endLat}>{row.endLat}</div>
+                              <div className="text-gray-300 truncate text-[9.5px] font-mono mt-0.5" title={row.endLon}>{row.endLon}</div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      { label: 'Avg Density', value: `${linkStats.avgDensity}%`, color: linkStats.avgDensity > 80 ? '#EF4444' : linkStats.avgDensity > 60 ? '#F97316' : '#22C55E' },
+                      { label: 'Est. Travel Time', value: `${linkStats.travelMins} min`, color: linkStats.worseStatus === 'critical' ? '#EF4444' : linkStats.worseStatus === 'heavy' ? '#F97316' : '#22C55E' },
+                      { label: 'Avg Speed', value: `${linkStats.avgSpeed} km/h`, color: '#3B82F6' },
+                      { label: 'Combined Volume', value: linkStats.totalVehicles.toLocaleString(), color: '#A855F7' },
+                    ].map(({ label, value, color }) => (
+                      <div key={label} className="bg-white/[0.03] rounded-lg p-2 border border-white/[0.05]">
+                        <div className="text-[10px] text-gray-400 font-sans mb-1 font-bold">{label}</div>
+                        <div className="text-base font-extrabold font-mono" style={{ color }}>{value}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
 
                 {/* Road Health Section */}
                 {(() => {
@@ -328,22 +748,22 @@ export default function IntelPanel({ selectedNode, selectedLink, drones, predict
                   return (
                     <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-2.5 space-y-1.5">
                       <div className="flex items-center justify-between">
-                        <span className="text-[9px] font-mono text-gray-500 tracking-wider">ROAD HEALTH INDEX</span>
-                        <span className="text-[10px] font-mono font-bold" style={{ color: roadHealthColor(healthItem.status) }}>
+                        <span className="text-xs font-mono text-gray-400 tracking-wider font-bold">ROAD HEALTH INDEX</span>
+                        <span className="text-xs font-mono font-bold" style={{ color: roadHealthColor(healthItem.status) }}>
                           {healthItem.score}/100 ({healthItem.status.toUpperCase()})
                         </span>
                       </div>
                       {healthItem.issues.length > 0 ? (
                         <div className="space-y-1">
                           {healthItem.issues.map((issue, idx) => (
-                            <div key={idx} className="text-[9px] text-red-300 flex items-start gap-1">
+                            <div key={idx} className="text-xs text-red-300 flex items-start gap-1 font-sans">
                               <span className="text-red-400 shrink-0 mt-0.5">⚠️</span>
                               <span>{issue}</span>
                             </div>
                           ))}
                         </div>
                       ) : (
-                        <div className="text-[9px] text-green-400 flex items-center gap-1">
+                        <div className="text-xs text-green-400 flex items-center gap-1 font-sans">
                           <CheckCircle2 className="w-2.5 h-2.5 text-green-400 shrink-0" />
                           <span>No structural defects reported</span>
                         </div>
@@ -356,8 +776,8 @@ export default function IntelPanel({ selectedNode, selectedLink, drones, predict
                 <div className="rounded-lg border border-orange-500/20 overflow-hidden">
                   <div className="bg-orange-500/10 px-3 py-1.5 flex items-center gap-2">
                     <Brain className="w-3 h-3 text-orange-400" />
-                    <span className="text-[10px] font-mono text-orange-400 tracking-wider">CORRIDOR DIRECTIVES</span>
-                    <span className="ml-auto text-[9px] text-orange-300 font-mono">94% conf.</span>
+                    <span className="text-xs font-mono text-orange-400 tracking-wider font-bold">CORRIDOR DIRECTIVES</span>
+                    <span className="ml-auto text-[10px] text-orange-300 font-mono font-bold">94% conf.</span>
                   </div>
                   <div className="p-2 space-y-1.5">
                     {linkRecommendations.map((rec, i) => (
@@ -365,7 +785,7 @@ export default function IntelPanel({ selectedNode, selectedLink, drones, predict
                         transition={{ delay: i * 0.1 }}
                         className="flex items-start gap-2">
                         <Zap className="w-3 h-3 text-orange-400 shrink-0 mt-0.5" />
-                        <span className="text-[10px] text-gray-300 leading-relaxed">{rec}</span>
+                        <span className="text-xs text-gray-200 leading-relaxed font-sans">{rec}</span>
                       </motion.div>
                     ))}
                   </div>
@@ -375,12 +795,12 @@ export default function IntelPanel({ selectedNode, selectedLink, drones, predict
               <div className="space-y-3">
                 <div className="bg-white/[0.03] rounded-lg p-3 border border-white/[0.05] text-center">
                   <MapPin className="w-6 h-6 text-gray-600 mx-auto mb-2" />
-                  <p className="text-[10px] text-gray-500 font-mono">Select a traffic node or corridor on the map to view intelligence</p>
+                  <p className="text-xs text-gray-400 font-sans">Select a traffic node or corridor on the map to view intelligence</p>
                 </div>
 
                 {/* System overview when no node selected */}
                 <div className="space-y-2">
-                  <div className="text-[9px] font-mono text-gray-600 tracking-widest uppercase px-1">System Overview</div>
+                  <div className="text-xs font-mono text-gray-400 tracking-wider uppercase px-1 font-bold">System Overview</div>
                   {[
                     { label: 'Total Vehicles', value: '4,869', icon: TrendingUp, color: 'text-orange-400' },
                     { label: 'Active Drones', value: '2', icon: Plane, color: 'text-blue-400' },
@@ -389,9 +809,9 @@ export default function IntelPanel({ selectedNode, selectedLink, drones, predict
                     <div key={label} className="flex items-center justify-between bg-white/[0.03] rounded-lg p-2.5 border border-white/[0.05]">
                       <div className="flex items-center gap-2">
                         <Icon className={`w-3.5 h-3.5 ${color}`} />
-                        <span className="text-[10px] text-gray-400">{label}</span>
+                        <span className="text-xs text-gray-300">{label}</span>
                       </div>
-                      <span className={`text-xs font-mono font-semibold ${color}`}>{value}</span>
+                      <span className={`text-sm font-mono font-bold ${color}`}>{value}</span>
                     </div>
                   ))}
                 </div>
@@ -487,28 +907,28 @@ export default function IntelPanel({ selectedNode, selectedLink, drones, predict
         <div className="rounded-lg border border-white/[0.06] overflow-hidden">
           <div className="px-3 py-1.5 border-b border-white/[0.05] flex items-center gap-2">
             <Thermometer className="w-3 h-3 text-cyan-400" />
-            <span className="text-[10px] font-mono text-gray-500 tracking-wider">WEATHER — KOZHIKODE</span>
+            <span className="text-xs font-mono text-gray-400 tracking-wider font-bold">WEATHER — KOZHIKODE</span>
           </div>
           <div className="p-2 grid grid-cols-2 gap-2">
             <div className="bg-white/[0.03] rounded p-2">
-              <div className="text-[9px] text-gray-500 font-mono">Temperature</div>
-              <div className="text-sm font-bold text-cyan-400 font-mono">{WEATHER.temperature}°C</div>
+              <div className="text-xs text-gray-400 font-sans font-bold">Temperature</div>
+              <div className="text-base font-extrabold text-cyan-400 font-mono">{WEATHER.temperature}°C</div>
             </div>
             <div className="bg-white/[0.03] rounded p-2">
-              <div className="text-[9px] text-gray-500 font-mono">Humidity</div>
-              <div className="text-sm font-bold text-blue-400 font-mono">{WEATHER.humidity}%</div>
+              <div className="text-xs text-gray-400 font-sans font-bold">Humidity</div>
+              <div className="text-base font-extrabold text-blue-400 font-mono">{WEATHER.humidity}%</div>
             </div>
             <div className="bg-white/[0.03] rounded p-2">
-              <div className="flex items-center gap-1 text-[9px] text-gray-500 font-mono mb-0.5">
+              <div className="flex items-center gap-1 text-xs text-gray-400 font-sans font-bold mb-0.5">
                 <CloudRain className="w-2.5 h-2.5" /> Rain
               </div>
-              <div className="text-sm font-bold text-blue-300 font-mono">{WEATHER.rainProbability}%</div>
+              <div className="text-base font-extrabold text-blue-300 font-mono">{WEATHER.rainProbability}%</div>
             </div>
             <div className="bg-white/[0.03] rounded p-2">
-              <div className="flex items-center gap-1 text-[9px] text-gray-500 font-mono mb-0.5">
+              <div className="flex items-center gap-1 text-xs text-gray-400 font-sans font-bold mb-0.5">
                 <Droplets className="w-2.5 h-2.5" /> Impact
               </div>
-              <div className="text-xs font-bold text-yellow-400 font-mono capitalize">{WEATHER.trafficImpact}</div>
+              <div className="text-sm font-extrabold text-yellow-400 font-mono capitalize">{WEATHER.trafficImpact}</div>
             </div>
           </div>
         </div>
@@ -517,13 +937,13 @@ export default function IntelPanel({ selectedNode, selectedLink, drones, predict
         {/* System health */}
         {activeTab === 'live' && (
         <div className="space-y-1">
-          <div className="text-[9px] font-mono text-gray-600 tracking-widest uppercase px-1">System Health</div>
+          <div className="text-xs font-mono text-gray-400 tracking-wider uppercase px-1 font-bold">System Health</div>
           {['AI Model', 'Drone Network', 'Map Services', 'Token Engine'].map(sys => (
             <div key={sys} className="flex items-center justify-between bg-white/[0.03] rounded px-2.5 py-1.5 border border-white/[0.04]">
-              <span className="text-[10px] text-gray-400">{sys}</span>
+              <span className="text-xs text-gray-300">{sys}</span>
               <div className="flex items-center gap-1">
                 <CheckCircle2 className="w-3 h-3 text-green-400" />
-                <span className="text-[9px] font-mono text-green-400">ONLINE</span>
+                <span className="text-xs font-mono text-green-400 font-bold">ONLINE</span>
               </div>
             </div>
           ))}
@@ -573,51 +993,501 @@ function suggestedMeasures(inc: Incident): string[] {
   return measures.slice(0, 4);
 }
 
-function Forecast20Panel({ selectedNode }: { selectedNode: TrafficNode | null }) {
-  const nodes = selectedNode ? [selectedNode] : TRAFFIC_NODES;
-  return (
-    <div className="space-y-2">
-      <div className="bg-orange-500/10 border border-orange-500/20 rounded-lg p-2.5 flex items-center gap-2">
-        <Sparkles className="w-3.5 h-3.5 text-orange-400 shrink-0" />
-        <div>
-          <div className="text-[10px] font-mono text-orange-400 tracking-wider">20-MIN PREDICTION</div>
-          <div className="text-[9px] text-gray-400">{selectedNode ? `Forecast for ${selectedNode.name}` : 'Forecast across all monitored junctions'}</div>
+interface Forecast20PanelProps {
+  selectedNode: TrafficNode | null;
+  selectedLink: string | null;
+  gcsPredictions: GCSPredictionData[];
+  linkStatuses: Record<string, any>;
+  onSelectLink?: (linkId: string | null) => void;
+  nodes: TrafficNode[];
+  selectedTime: string;
+  isWhatIfActive: boolean;
+  setIsWhatIfActive: (val: boolean) => void;
+  whatIfLanesBlocked: number;
+  setWhatIfLanesBlocked: (val: number) => void;
+  whatIfEventIntensity: number;
+  setWhatIfEventIntensity: (val: number) => void;
+  whatIfRetimingSeconds: number;
+  setWhatIfRetimingSeconds: (val: number) => void;
+  isRetimingApplied: boolean;
+  setIsRetimingApplied: (val: boolean) => void;
+  uniqueTimestamps: string[];
+  selectedDate: string;
+  setSelectedDate: (val: string) => void;
+  playbackIndex: number;
+  setPlaybackIndex: (val: number) => void;
+  isPlaybackPlaying: boolean;
+  setIsPlaybackPlaying: (val: boolean) => void;
+  playbackSpeed: number;
+  setPlaybackSpeed: (val: number) => void;
+  onTimeChange: (val: string) => void;
+}
+
+function Forecast20Panel({ 
+  selectedNode, 
+  selectedLink, 
+  gcsPredictions, 
+  linkStatuses,
+  onSelectLink,
+  nodes,
+  selectedTime,
+  isWhatIfActive,
+  setIsWhatIfActive,
+  whatIfLanesBlocked,
+  setWhatIfLanesBlocked,
+  whatIfEventIntensity,
+  setWhatIfEventIntensity,
+  whatIfRetimingSeconds,
+  setWhatIfRetimingSeconds,
+  isRetimingApplied,
+  setIsRetimingApplied,
+  uniqueTimestamps,
+  selectedDate,
+  setSelectedDate,
+  playbackIndex,
+  setPlaybackIndex,
+  isPlaybackPlaying,
+  setIsPlaybackPlaying,
+  playbackSpeed,
+  setPlaybackSpeed,
+  onTimeChange
+}: Forecast20PanelProps) {
+  const isLinkActive = selectedLink !== null;
+  const isNodeActive = selectedNode !== null;
+
+  const handleTimeSelectorChange = (newTime: string) => {
+    onTimeChange(newTime);
+    if (uniqueTimestamps.length === 0) return;
+    const toSeconds = (t: string) => {
+      const parts = t.split(':').map(Number);
+      return (parts[0] || 0) * 3600 + (parts[1] || 0) * 60 + (parts[2] || 0);
+    };
+    const targetSec = toSeconds(newTime);
+    let closestIdx = 0;
+    let minDiff = Infinity;
+    for (let i = 0; i < uniqueTimestamps.length; i++) {
+      const diff = Math.abs(toSeconds(uniqueTimestamps[i]) - targetSec);
+      if (diff < minDiff) {
+        minDiff = diff;
+        closestIdx = i;
+      }
+    }
+    setPlaybackIndex(closestIdx);
+  };
+
+  const nodeLinkConnections: Record<string, string[]> = {
+    mavoor: ['L11', 'L23', 'L12', 'L25', 'L14', 'L26'],
+    bus_stand: ['L11', 'L23', 'L13', 'L19', 'L6', 'L17'],
+    arayidathupalam: ['L13', 'L19', 'L1', 'L18'],
+    mananchira: ['L14', 'L26', 'L8', 'L22', 'L5', 'L15'],
+    stadium: ['L6', 'L17', 'L3', 'L16', 'L4', 'L10', 'L5', 'L15'],
+    midtown: ['L1', 'L18', 'L3', 'L16', 'L2', 'L24'],
+    palayam: ['L8', 'L22', 'L9', 'L21'],
+    poonthanam: ['L9', 'L21', 'L4', 'L10', 'L7', 'L20'],
+    east_bypass: ['L2', 'L24', 'L7', 'L20'],
+  };
+
+  const connectionToLinks: Record<string, [string, string]> = {
+    'mavoor-bus_stand': ['L23', 'L11'],
+    'bus_stand-arayidathupalam': ['L19', 'L13'],
+    'arayidathupalam-midtown': ['L1', 'L18'],
+    'midtown-east_bypass': ['L2', 'L24'],
+    'east_bypass-poonthanam': ['L20', 'L7'],
+    'poonthanam-palayam': ['L21', 'L9'],
+    'palayam-mananchira': ['L22', 'L8'],
+    'mavoor-mananchira': ['L26', 'L14'],
+    'bus_stand-stadium': ['L6', 'L17'],
+    'stadium-midtown': ['L3', 'L16'],
+    'stadium-poonthanam': ['L4', 'L10'],
+    'stadium-mananchira': ['L5', 'L15'],
+  };
+
+  const linkToConnectionMap: Record<string, string> = {
+    L23: 'mavoor-bus_stand',
+    L11: 'mavoor-bus_stand',
+    L19: 'bus_stand-arayidathupalam',
+    L13: 'bus_stand-arayidathupalam',
+    L1: 'arayidathupalam-midtown',
+    L18: 'arayidathupalam-midtown',
+    L2: 'midtown-east_bypass',
+    L24: 'midtown-east_bypass',
+    L20: 'east_bypass-poonthanam',
+    L7: 'east_bypass-poonthanam',
+    L21: 'poonthanam-palayam',
+    L9: 'poonthanam-palayam',
+    L22: 'palayam-mananchira',
+    L8: 'palayam-mananchira',
+    L26: 'mavoor-mananchira',
+    L14: 'mavoor-mananchira',
+    L6: 'bus_stand-stadium',
+    L17: 'bus_stand-stadium',
+    L3: 'stadium-midtown',
+    L16: 'stadium-midtown',
+    L4: 'stadium-poonthanam',
+    L10: 'stadium-poonthanam',
+    L5: 'stadium-mananchira',
+    L15: 'stadium-mananchira',
+  };
+
+  const linkDescriptions: Record<string, string> = {
+    L1: 'Mini Bypass Road (Northbound)',
+    L18: 'Mini Bypass Road (Southbound)',
+    L3: 'Puthiyara Road (Stadium → Midtown)',
+    L16: 'Puthiyara Road (Midtown → Stadium)',
+    L6: 'Rajaji Road (Bus Stand → Stadium)',
+    L17: 'Rajaji Road (Stadium → Bus Stand)',
+    L13: 'Mavoor Road Middle (Arayidathupalam → Bus Stand)',
+    L19: 'Mavoor Road Middle (Bus Stand → Arayidathupalam)',
+  };
+
+  const elapsedSec = (() => {
+    const parts = selectedTime.split(':').map(Number);
+    const h = parts[0] || 0;
+    const m = parts[1] || 0;
+    const s = parts[2] || 0;
+    return (h * 3600 + m * 60 + s);
+  })();
+
+  const findForecast = (preds: GCSPredictionData[], targetSec: number): GCSPredictionData | null => {
+    if (preds.length === 0) return null;
+    const bucketStartSec = Math.floor(targetSec / 1200) * 1200;
+    const exactMatch = preds.find(p => p.predictionHorizonSec === bucketStartSec);
+    if (exactMatch) return exactMatch;
+    
+    // Fallback: closest match
+    let baseForecast = preds[0];
+    let minDiff = Infinity;
+    for (const p of preds) {
+      let diff = Math.abs(p.predictionHorizonSec - bucketStartSec);
+      if (diff > 43200) {
+        diff = 86400 - diff;
+      }
+      if (diff < minDiff) {
+        minDiff = diff;
+        baseForecast = p;
+      }
+    }
+    return baseForecast;
+  };
+
+  const allStgnnLinks = ['L19', 'L13', 'L6', 'L17', 'L18', 'L1', 'L16', 'L3'];
+
+  const renderLinkForecastCard = (linkId: string, forecast: GCSPredictionData | null, onClick?: () => void) => {
+    const desc = linkDescriptions[linkId] || `Link ${linkId}`;
+    const isBottleneck = forecast ? forecast.severityLevel === 'CRITICAL' : false;
+    const rawStrategy = forecast ? forecast.recommendedStrategy : '';
+    const strategy = (rawStrategy === '' || rawStrategy === '0' || !rawStrategy) ? 'No measures required' : rawStrategy;
+    
+    return (
+      <div 
+        key={linkId} 
+        onClick={onClick}
+        className={`bg-white/[0.03] border border-white/[0.05] rounded-lg p-3 space-y-2 transition-all ${
+          onClick ? 'cursor-pointer hover:bg-white/[0.06] hover:border-white/[0.1]' : ''
+        }`}
+      >
+        <div className="flex items-center justify-between gap-1">
+          <div className="text-xs font-bold text-white leading-snug flex items-center gap-1.5 min-w-0">
+            <span className="text-[8.5px] font-mono bg-white/[0.06] border border-white/[0.1] px-1.5 py-0.5 rounded text-orange-400 font-extrabold shrink-0 uppercase tracking-wider font-mono">
+              {linkId}
+            </span>
+            <span className="truncate text-gray-200 font-sans" title={desc}>{desc}</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="text-[9px] font-mono text-gray-500 uppercase">Bottleneck:</span>
+            <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded font-bold uppercase shrink-0 border ${
+              isBottleneck 
+                ? 'bg-red-500/10 text-red-400 border-red-500/30' 
+                : 'bg-green-500/10 text-green-400 border-green-500/30'
+            }`}>
+              {isBottleneck ? 'YES' : 'NO'}
+            </span>
+          </div>
+        </div>
+        
+        <div className={`p-2 rounded flex items-start gap-2 ${
+          isBottleneck ? 'bg-orange-500/10 border border-orange-500/20 text-orange-400' : 'bg-white/[0.02] border border-white/[0.04] text-gray-400'
+        }`}>
+          <Zap className={`w-3.5 h-3.5 shrink-0 mt-0.5 ${isBottleneck ? 'text-orange-400 animate-pulse' : 'text-gray-500'}`} />
+          <div>
+            <div className="text-[9px] font-mono font-bold uppercase tracking-wider">Management Strategy</div>
+            <div className="text-xs text-gray-200 mt-0.5 leading-relaxed font-sans">{strategy}</div>
+          </div>
         </div>
       </div>
-      {nodes.map(node => {
-        const pred = getPrediction(node, '20min');
-        const status = congestionToStatus(pred.congestion);
-        const color = statusColor(status);
+    );
+  };
+
+  return (
+    <div className="space-y-3">
+      {/* Timeline Seeker card */}
+      {uniqueTimestamps.length > 0 && (
+        <div className="timeline-seeker-card bg-[#0F1117]/90 border border-white/[0.08] rounded-xl p-3 space-y-2.5">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-mono text-gray-400 tracking-wider uppercase font-bold">Timeline Seeker</span>
+            <div className="text-xs font-mono font-extrabold text-orange-400 bg-orange-400/10 border border-orange-400/20 px-2 py-0.5 rounded flex items-center gap-1.5">
+              <Clock className="w-3.5 h-3.5 animate-pulse" />
+              {selectedTime}
+            </div>
+          </div>
+
+          {/* Time & Date Inputs Row */}
+          <div className="flex items-center justify-between gap-1.5 bg-white/[0.02] border border-white/[0.04] p-1.5 rounded-lg">
+            {/* Date Picker */}
+            <div className="flex flex-col gap-0.5">
+              <label className="text-[7.5px] font-mono text-gray-500 uppercase font-bold">Date</label>
+              <input
+                type="date"
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+                className="bg-white/[0.04] border border-white/[0.08] rounded px-1.5 py-0.5 text-[10px] font-mono text-white focus:outline-none focus:border-orange-500/50 w-24 shrink-0 font-bold"
+              />
+            </div>
+
+            {/* Time Selectors */}
+            <div className="flex flex-col gap-0.5 flex-1 items-end">
+              <label className="text-[7.5px] font-mono text-gray-500 uppercase font-bold pr-1">Target Time (HH:MM:SS)</label>
+              <div className="flex items-center gap-1">
+                {/* Hour select */}
+                <select
+                  value={selectedTime.split(':')[0] || '00'}
+                  onChange={(e) => {
+                    const [_, m, s] = selectedTime.split(':');
+                    handleTimeSelectorChange(`${e.target.value}:${m || '00'}:${s || '00'}`);
+                  }}
+                  className="bg-white/[0.04] border border-white/[0.08] rounded px-1 py-0.5 text-[10px] font-mono text-white focus:outline-none focus:border-orange-500/50 w-[38px] text-center font-bold"
+                >
+                  {Array.from({ length: 24 }, (_, i) => {
+                    const val = String(i).padStart(2, '0');
+                    return <option key={val} value={val} className="bg-[#0F1117] text-white">{val}</option>;
+                  })}
+                </select>
+
+                <span className="text-[9px] text-gray-500 font-mono">:</span>
+
+                {/* Minute select */}
+                <select
+                  value={selectedTime.split(':')[1] || '00'}
+                  onChange={(e) => {
+                    const [h, _, s] = selectedTime.split(':');
+                    handleTimeSelectorChange(`${h || '00'}:${e.target.value}:${s || '00'}`);
+                  }}
+                  className="bg-white/[0.04] border border-white/[0.08] rounded px-1 py-0.5 text-[10px] font-mono text-white focus:outline-none focus:border-orange-500/50 w-[38px] text-center font-bold"
+                >
+                  {Array.from({ length: 60 }, (_, i) => {
+                    const val = String(i).padStart(2, '0');
+                    return <option key={val} value={val} className="bg-[#0F1117] text-white">{val}</option>;
+                  })}
+                </select>
+
+                <span className="text-[9px] text-gray-500 font-mono">:</span>
+
+                {/* Second select */}
+                <select
+                  value={selectedTime.split(':')[2] || '00'}
+                  onChange={(e) => {
+                    const [h, m, _] = selectedTime.split(':');
+                    handleTimeSelectorChange(`${h || '00'}:${m || '00'}:${e.target.value}`);
+                  }}
+                  className="bg-white/[0.04] border border-white/[0.08] rounded px-1 py-0.5 text-[10px] font-mono text-white focus:outline-none focus:border-orange-500/50 w-[38px] text-center font-bold"
+                >
+                  {Array.from({ length: 12 }, (_, i) => {
+                    const val = String(i * 5).padStart(2, '0');
+                    return <option key={val} value={val} className="bg-[#0F1117] text-white">{val}</option>;
+                  })}
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* Playback Controls Row */}
+          <div className="flex items-center justify-between gap-3">
+            {/* Step back */}
+            <button
+              onClick={() => {
+                const nextIdx = (playbackIndex - 1 + uniqueTimestamps.length) % uniqueTimestamps.length;
+                setPlaybackIndex(nextIdx);
+              }}
+              title="Step Back"
+              className="w-8 h-8 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] flex items-center justify-center text-[10px] text-gray-300 hover:text-white"
+            >
+              ◀
+            </button>
+
+            {/* Play/Pause */}
+            <button
+              onClick={() => setIsPlaybackPlaying(!isPlaybackPlaying)}
+              title={isPlaybackPlaying ? "Pause Playback" : "Start Playback"}
+              className={`flex-1 h-8 rounded-lg border flex items-center justify-center font-bold text-[10px] gap-1 ${
+                isPlaybackPlaying 
+                  ? 'bg-orange-500/10 text-orange-400 border-orange-500/30 hover:bg-orange-500/20' 
+                  : 'bg-green-500/10 text-green-400 border-green-500/30 hover:bg-green-500/20'
+              }`}
+            >
+              {isPlaybackPlaying ? 'PAUSE' : 'PLAY'}
+            </button>
+
+            {/* Step forward */}
+            <button
+              onClick={() => {
+                const nextIdx = (playbackIndex + 1) % uniqueTimestamps.length;
+                setPlaybackIndex(nextIdx);
+              }}
+              title="Step Forward"
+              className="w-8 h-8 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] flex items-center justify-center text-[10px] text-gray-300 hover:text-white"
+            >
+              ▶
+            </button>
+          </div>
+
+          {/* Range Scrubber */}
+          <div className="space-y-1">
+            <input
+              type="range"
+              min="0"
+              max={uniqueTimestamps.length - 1}
+              value={playbackIndex}
+              onChange={(e) => {
+                const idx = parseInt(e.target.value, 10);
+                setPlaybackIndex(idx);
+                if (uniqueTimestamps[idx]) {
+                  onTimeChange(uniqueTimestamps[idx]);
+                }
+              }}
+              className="w-full h-1 bg-white/10 rounded-lg appearance-none cursor-pointer accent-orange-500"
+            />
+            <div className="flex justify-between text-[8px] font-mono text-gray-500">
+              <span>START (00:00)</span>
+              <span>Index: {playbackIndex + 1} / {uniqueTimestamps.length}</span>
+              <span>END (24:00)</span>
+            </div>
+          </div>
+
+          {/* Playback speed selector */}
+          <div className="flex items-center justify-between border-t border-white/[0.04] pt-2">
+            <span className="text-[9px] font-mono text-gray-500 uppercase">Playback Speed</span>
+            <div className="flex gap-1">
+              {[1, 5, 15, 30].map((speed) => (
+                <button
+                  key={speed}
+                  onClick={() => setPlaybackSpeed(speed)}
+                  className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-bold transition-all ${
+                    playbackSpeed === speed
+                      ? 'bg-orange-500 text-[#0F1117]'
+                      : 'bg-white/[0.03] text-gray-400 hover:text-white border border-white/[0.04]'
+                  }`}
+                >
+                  {speed}x
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Main content area */}
+      {(() => {
+        if (isNodeActive) {
+          const nodeLinks = nodeLinkConnections[selectedNode.id] || [];
+          const activeNodeLinks = nodeLinks.filter(l => allStgnnLinks.includes(l));
+
+          return (
+            <div className="space-y-2">
+              <div className="bg-orange-500/10 border border-orange-500/20 rounded-lg p-2.5 flex items-center gap-2">
+                <Sparkles className="w-3.5 h-3.5 text-orange-400 shrink-0" />
+                <div>
+                  <div className="text-[10px] font-mono text-orange-400 tracking-wider font-bold">20-MIN JUNCTION FORECAST</div>
+                  <div className="text-[9px] text-gray-400 font-sans">Forecast for links connected to {selectedNode.name}</div>
+                </div>
+              </div>
+
+              {activeNodeLinks.length === 0 ? (
+                <div className="bg-white/[0.03] border border-white/[0.05] rounded-lg p-3 text-center text-xs text-gray-500 font-mono">
+                  No STGNN prediction links connect to this junction.
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {activeNodeLinks.map(linkId => {
+                    const preds = gcsPredictions.filter(p => p.link === linkId);
+                    const forecast = findForecast(preds, elapsedSec);
+                    return renderLinkForecastCard(linkId, forecast);
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        }
+
+        if (isLinkActive) {
+          const mappedIds = connectionToLinks[selectedLink] || [];
+          const activeLinkForecasts = mappedIds.filter(l => allStgnnLinks.includes(l));
+
+          return (
+            <div className="space-y-2">
+              <div className="bg-orange-500/10 border border-orange-500/20 rounded-lg p-2.5 flex items-center gap-2">
+                <Brain className="w-3.5 h-3.5 text-orange-400 shrink-0" />
+                <div>
+                  <div className="text-[10px] font-mono text-orange-400 tracking-wider font-bold">20-MIN CORRIDOR FORECAST</div>
+                  <div className="text-[9px] text-gray-400 font-sans">Forecast for active links on selected corridor</div>
+                </div>
+              </div>
+
+              {activeLinkForecasts.length === 0 ? (
+                <div className="bg-white/[0.03] border border-white/[0.05] rounded-lg p-3 text-center text-xs text-gray-400 font-mono">
+                  No forecast data available for selected corridor links.
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {activeLinkForecasts.map(linkId => {
+                    const preds = gcsPredictions.filter(p => p.link === linkId);
+                    const forecast = findForecast(preds, elapsedSec);
+                    return renderLinkForecastCard(linkId, forecast);
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        }
+
+        // Overview: no selection
+        const allLinkForecasts = allStgnnLinks.map(linkId => {
+          const preds = gcsPredictions.filter(p => p.link === linkId);
+          const f = findForecast(preds, elapsedSec);
+          return {
+            linkId,
+            forecast: f,
+            connectionKey: linkToConnectionMap[linkId]
+          };
+        });
+
         return (
-          <div key={node.id} className="bg-white/[0.03] border border-white/[0.05] rounded-lg p-2.5 space-y-1.5">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 min-w-0">
-                <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: color }} />
-                <span className="text-[11px] font-semibold text-white truncate">{node.name}</span>
-              </div>
-              <span className="text-[9px] font-mono uppercase shrink-0" style={{ color }}>{statusLabel(status)}</span>
-            </div>
-            <div className="grid grid-cols-3 gap-1.5">
-              <div className="bg-white/[0.03] rounded p-1.5">
-                <div className="text-[8px] text-gray-500 font-mono">Density</div>
-                <div className="text-[11px] font-bold font-mono" style={{ color }}>{pred.density}%</div>
-              </div>
-              <div className="bg-white/[0.03] rounded p-1.5">
-                <div className="text-[8px] text-gray-500 font-mono">Vehicles</div>
-                <div className="text-[11px] font-bold font-mono text-orange-400">{pred.vehicleCount.toLocaleString()}</div>
-              </div>
-              <div className="bg-white/[0.03] rounded p-1.5">
-                <div className="text-[8px] text-gray-500 font-mono">Speed</div>
-                <div className="text-[11px] font-bold font-mono text-blue-400">{pred.avgSpeed}<span className="text-[8px] text-gray-500"> km/h</span></div>
+          <div className="space-y-2">
+            <div className="bg-orange-500/10 border border-orange-500/20 rounded-lg p-2.5 flex items-center gap-2">
+              <Brain className="w-3.5 h-3.5 text-orange-400 shrink-0" />
+              <div>
+                <div className="text-[10px] font-mono text-orange-400 tracking-wider font-bold">20-MIN NETWORK FORECAST</div>
+                <div className="text-[9px] text-gray-400 font-sans font-bold">Predictions for 8 primary links</div>
               </div>
             </div>
-            <div className="flex items-center justify-between text-[9px] font-mono">
-              <span className="text-gray-500">Confidence</span>
-              <span className="text-purple-400">{pred.confidence}%</span>
+
+            <div className="space-y-2 max-h-[480px] overflow-y-auto pr-1">
+              {allLinkForecasts.length === 0 ? (
+                <div className="bg-white/[0.03] border border-white/[0.05] rounded-lg p-4 text-center text-xs text-gray-500 font-mono">
+                  No STGNN predictions loaded yet.
+                </div>
+              ) : (
+                allLinkForecasts.map(({ linkId, forecast, connectionKey }) => {
+                  return renderLinkForecastCard(linkId, forecast, () => {
+                    if (onSelectLink && connectionKey) {
+                      onSelectLink(connectionKey);
+                    }
+                  });
+                })
+              )}
             </div>
           </div>
         );
-      })}
+      })()}
     </div>
   );
 }
